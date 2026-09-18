@@ -3,12 +3,15 @@ import { NextFunction, Request, Response } from "express"
 import moment from "moment"
 import createHttpError from "http-errors"
 import Bcrypt from 'bcrypt'
-
+import path from "node:path"
+import fs from "node:fs"
+import { APIQuery } from "@/app/lib/types"
 
 import { trailRaceRunner } from "@/app/lib/schema/event.schema"
 import { FileHandler } from "@/app/lib/services/file.service"
 import { emailQueue } from "@/queue/email.queue"
 import { prisma } from '@/app/lib/services/prisma.service'
+import { __basedir } from "@/index"
 import { PaymentMethod, PaymentStatus } from "@prisma/client/index-browser"
 import ical, { ICalCalendarMethod } from "ical-generator"
 
@@ -911,12 +914,13 @@ export class RunnerController {
 
     public static async sendMassEmail(request: Request, response: Response, next: NextFunction) {
         try {
-            const { runnerIds, stageId, subject, htmlTemplate, variableMap } = request.body
+            const { runnerIds, stageId, subject, htmlTemplate, variableMap, attachStageGpx } = request.body
             const eventId = request.params.event_id
 
             let finalSubject = subject
             let finalHtmlTemplate = htmlTemplate
             let finalVariableMap = variableMap
+            let finalAttachStageGpx = attachStageGpx
 
             if (!finalSubject || !finalHtmlTemplate) {
                 const template = await prisma.eventEmailTemplate.findUnique({
@@ -931,6 +935,7 @@ export class RunnerController {
                 finalSubject = template.subject
                 finalHtmlTemplate = template.htmlContent
                 finalVariableMap = template.variableMap as Record<string, string>
+                finalAttachStageGpx = template.attachStageGpx
             }
 
             let whereClause: any = {}
@@ -955,7 +960,8 @@ export class RunnerController {
                         include: {
                             stage: {
                                 include: { event: true }
-                            }
+                            },
+                            map_file: true
                         }
                     }
                 }
@@ -998,12 +1004,40 @@ export class RunnerController {
                     runnerHtml = runnerHtml.replace(regex, val)
                 }
 
+                const attachments: any[] = []
+                if (finalAttachStageGpx && stageCategory?.map_file?.file_name) {
+                    const fileName = stageCategory.map_file.file_name
+                    const possiblePaths = [
+                        path.join(__basedir, 'uploads', 'gpx', fileName),
+                        path.join(__basedir, 'uploads', 'images', fileName),
+                        path.join(__basedir, 'uploads', 'files', fileName)
+                    ]
+                    
+                    let foundPath = null
+                    for (const p of possiblePaths) {
+                        if (fs.existsSync(p)) {
+                            foundPath = p
+                            break
+                        }
+                    }
+
+                    if (foundPath) {
+                        attachments.push({
+                            filename: fileName,
+                            path: foundPath
+                        })
+                    } else {
+                        console.warn(`Could not find local GPX file for attachment: ${fileName}`)
+                    }
+                }
+
                 await emailQueue.add('sendEmail', {
                     to: personal.email,
                     subject: finalSubject,
                     html: runnerHtml,
                     senderEmail: 'info@trailmandu.com',
-                    category: 'event_mass_email'
+                    category: 'event_mass_email',
+                    attachments
                 })
 
                 queuedCount++;

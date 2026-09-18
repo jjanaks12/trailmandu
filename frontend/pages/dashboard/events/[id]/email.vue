@@ -46,6 +46,7 @@ const { handleSubmit } = useForm({
 
 const { value: subject, errorMessage: subjectError } = useField<string>('subject')
 const { value: htmlContent, errorMessage: htmlContentError } = useField<string>('htmlContent')
+const attachStageGpx = ref(false)
 const isLoading = ref(false)
 const activeTab = ref('preview')
 const iframeRef = ref<HTMLIFrameElement | null>(null)
@@ -242,6 +243,7 @@ onMounted(async () => {
         if (data) {
             subject.value = data.subject
             htmlContent.value = data.htmlContent || ''
+            attachStageGpx.value = data.attachStageGpx || false
             parseTemplate(data.htmlContent || '')
             
             // Restore variable mappings
@@ -359,7 +361,8 @@ const saveTemplate = handleSubmit(async (values) => {
         const payload = {
             subject: values.subject,
             htmlTemplate: processedHtml,
-            variableMap
+            variableMap,
+            attachStageGpx: attachStageGpx.value
         }
 
         const { data } = await axios.post(`/events/${eventId}/email-template`, payload)
@@ -408,6 +411,12 @@ const saveTemplate = handleSubmit(async (values) => {
                                 placeholder="Email Subject">
                             <span v-if="subjectError" class="text-xs text-red-500 mt-1 block">{{ subjectError }}</span>
                         </div>
+                    </div>
+
+                    <!-- Options -->
+                    <div class="flex items-center gap-2">
+                        <input type="checkbox" id="attachGpx" v-model="attachStageGpx" class="rounded border-gray-300 text-primary focus:ring-primary h-4 w-4">
+                        <label for="attachGpx" class="text-sm text-gray-700">Automatically attach the GPX file for the stage the runner is registered for</label>
                     </div>
 
                     <!-- Template Upload -->

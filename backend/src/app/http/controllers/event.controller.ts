@@ -446,7 +446,7 @@ export class EventController {
 
     public static async saveEmailTemplate(request: Request, response: Response, next: NextFunction) {
         try {
-            const { subject, htmlTemplate, variableMap } = request.body
+            const { subject, htmlTemplate, variableMap, attachStageGpx } = request.body
             const eventId = request.params.event_id as string
 
             const template = await prisma.eventEmailTemplate.upsert({
@@ -454,13 +454,15 @@ export class EventController {
                 update: {
                     subject,
                     htmlContent: htmlTemplate,
-                    variableMap: variableMap || {}
+                    variableMap: variableMap || {},
+                    attachStageGpx: attachStageGpx || false
                 },
                 create: {
                     event_id: eventId,
                     subject,
                     htmlContent: htmlTemplate,
-                    variableMap: variableMap || {}
+                    variableMap: variableMap || {},
+                    attachStageGpx: attachStageGpx || false
                 }
             })
             response.send(template)

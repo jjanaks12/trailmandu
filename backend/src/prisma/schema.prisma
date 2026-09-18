@@ -778,7 +778,8 @@ model EventEmailTemplate {
   id          String    @id @default(cuid())
   subject     String
   htmlContent String    @db.LongText
-  variableMap Json      @default("{}")
+  variableMap    Json      @default("{}")
+  attachStageGpx Boolean   @default(false)
   
   event_id    String    @unique
   event       TrailRace @relation(fields: [event_id], references: [id], onDelete: Cascade)
