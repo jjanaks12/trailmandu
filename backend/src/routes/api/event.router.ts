@@ -36,6 +36,8 @@ router.put('/:event_id/update_image_id', [verifyAccessToken], EventController.up
 router.put('/:event_id/update_gallery_id', [verifyAccessToken], EventController.updateGalleryId)
 router.put('/:event_id/upload_map_file', [verifyAccessToken], EventController.updateGPXFile)
 router.delete('/:event_id', [verifyAccessToken], EventController.destory)
+router.get('/:event_id/email-template', [verifyAccessToken], EventController.getEmailTemplate)
+router.post('/:event_id/email-template', [verifyAccessToken], EventController.saveEmailTemplate)
 
 // STAGES
 router.get('/:event_id/stages', [verifyAccessToken], StageController.index)
@@ -64,6 +66,7 @@ router.patch('/checkpoints/assign_volunteer/:volunteer_id', [], VolunteerControl
 // RUNNERS
 router.post('/:event_id/runner/register', [], RunnerController.save)
 router.get('/:event_id/:stage_id/runners', [], RunnerController.index)
+router.post('/:event_id/runners/mass-email', [verifyAccessToken], RunnerController.sendMassEmail)
 
 // STAGE_CATEGORIES
 router.get('/:stage_id/stage_categories', [], StageCategoryController.index)

@@ -8,13 +8,15 @@ import path from 'path';
 
 const redisConnection = new IORedis(process.env.REDIS_URL || 'redis://localhost:6379', { maxRetriesPerRequest: null });
 
+const isProd = process.env.NODE_ENV === 'production';
+
 // Initialize Mailtrap or default SMTP
 const transporter = nodemailer.createTransport({
-    host: process.env.MAIL_HOST || 'sandbox.smtp.mailtrap.io',
-    port: Number(process.env.MAIL_PORT) || 2525,
+    host: process.env.MAIL_HOST || (isProd ? 'send.smtp.mailtrap.io' : 'sandbox.smtp.mailtrap.io'),
+    port: Number(process.env.MAIL_PORT) || (isProd ? 587 : 2525),
     auth: {
-        user: process.env.MAIL_USER || (process.env.MAILTRAP_TOKEN ? 'api' : ''),
-        pass: process.env.MAIL_PASS || process.env.MAILTRAP_TOKEN || ''
+        user: process.env.MAIL_USER || (isProd ? 'api' : (process.env.MAILTRAP_SANDBOX_USER || '')),
+        pass: process.env.MAIL_PASS || (isProd ? process.env.MAILTRAP_TOKEN : (process.env.MAILTRAP_SANDBOX_PASS || ''))
     }
 });
 
@@ -24,7 +26,7 @@ export const emailWorker = new Worker('emailQueue', async (job: Job) => {
 
     try {
         const { fileName, replacements, to, subject, html, text, props, attachments } = job.data;
-        
+
         // Attempt to extract the recipient email
         recipientEmail = to;
         if (!recipientEmail && replacements && replacements.user && replacements.user.email) {
@@ -89,7 +91,13 @@ export const emailWorker = new Worker('emailQueue', async (job: Job) => {
         console.error(`Failed to send email to ${recipientEmail}:`, error);
         throw error;
     }
-}, { connection: redisConnection });
+}, {
+    connection: redisConnection,
+    limiter: {
+        max: 1,
+        duration: 60000
+    }
+});
 
 emailWorker.on('failed', (job, err) => {
     console.error(`Job ${job?.id} failed with error ${err.message}`);

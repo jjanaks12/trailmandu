@@ -908,4 +908,110 @@ export class RunnerController {
             next(error)
         }
     }
+
+    public static async sendMassEmail(request: Request, response: Response, next: NextFunction) {
+        try {
+            const { runnerIds, stageId, subject, htmlTemplate, variableMap } = request.body
+            const eventId = request.params.event_id
+
+            let finalSubject = subject
+            let finalHtmlTemplate = htmlTemplate
+            let finalVariableMap = variableMap
+
+            if (!finalSubject || !finalHtmlTemplate) {
+                const template = await prisma.eventEmailTemplate.findUnique({
+                    where: { event_id: eventId as string }
+                })
+                
+                if (!template) {
+                    response.status(400).send('Subject and HTML template are required, and no saved template was found')
+                    return
+                }
+                
+                finalSubject = template.subject
+                finalHtmlTemplate = template.htmlContent
+                finalVariableMap = template.variableMap as Record<string, string>
+            }
+
+            let whereClause: any = {}
+            if (runnerIds && Array.isArray(runnerIds) && runnerIds.length > 0) {
+                whereClause = { id: { in: runnerIds } }
+            } else if (stageId) {
+                whereClause = { stage_category: { stage_id: stageId } }
+            } else if (eventId) {
+                whereClause = { stage_category: { stage: { event_id: eventId } } }
+            } else {
+                response.status(400).send('Must provide runnerIds, stageId, or eventId')
+                return
+            }
+
+            const runners = await prisma.eventRunner.findMany({
+                where: whereClause,
+                include: {
+                    personal: {
+                        include: { country: true, gender: true }
+                    },
+                    stage_category: {
+                        include: {
+                            stage: {
+                                include: { event: true }
+                            }
+                        }
+                    }
+                }
+            })
+
+            let queuedCount = 0;
+            const mapKeys = Object.keys(finalVariableMap || {})
+
+            for (const runner of runners) {
+                const personal = runner.personal
+                const stageCategory = runner.stage_category
+                const event = stageCategory?.stage?.event
+
+                if (!personal?.email) continue;
+
+                // Build values map based on what is available
+                const values: Record<string, string> = {
+                    'First Name': personal.first_name || '',
+                    'Last Name': personal.last_name || '',
+                    'Full Name': [personal.first_name, personal.middle_name, personal.last_name].filter(Boolean).join(' '),
+                    'Email': personal.email,
+                    'BIB Number': runner.bib || '',
+                    'Country': personal.country?.name || '',
+                    'Gender': personal.gender?.name || '',
+                    'Stage Distance': stageCategory?.name || '',
+                    'Event Name': event?.name || '',
+                    'Event Timing': stageCategory?.start ? moment.utc(stageCategory.start).local().format('DD-MM-YYYY hh:mm a') : '',
+                    'Event Thumbnail URL': finalVariableMap?.['Event Thumbnail URL'] || '', 
+                    'Stage Image URL': finalVariableMap?.['Stage Image URL'] || ''
+                }
+
+                // Replace placeholders in the HTML
+                let runnerHtml = finalHtmlTemplate
+                for (const placeholder of mapKeys) {
+                    const mappedField = finalVariableMap[placeholder]
+                    const val = values[mappedField] !== undefined ? values[mappedField] : mappedField // fallback to the literal mapping value for images if it was a direct URL
+                    
+                    // Global replace
+                    const regex = new RegExp(placeholder.replace(/[.*+?^$()|[\]\\]/g, '\\$&'), 'g');
+                    runnerHtml = runnerHtml.replace(regex, val)
+                }
+
+                await emailQueue.add('sendEmail', {
+                    to: personal.email,
+                    subject: finalSubject,
+                    html: runnerHtml,
+                    senderEmail: 'info@trailmandu.com',
+                    category: 'event_mass_email'
+                })
+
+                queuedCount++;
+            }
+
+            response.send({ message: `Mass email queued for ${queuedCount} runners` })
+        } catch (error) {
+            next(error)
+        }
+    }
 }

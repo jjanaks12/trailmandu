@@ -35,11 +35,11 @@ const getImagesFromSelectedGallery = async (append = false) => {
         const url = media.value.selectedGallery.id === 'uncategorized'
             ? `/medias/images/uncategorized`
             : `/medias/images/${media.value.selectedGallery.id}`
-        
+
         const { data: { data, ...p } } = await axios.get(url, {
             params: params.value
         })
-        
+
         if (append) {
             images.value = [...(images.value || []), ...data]
         } else {
@@ -113,6 +113,15 @@ onMounted(getImagesFromSelectedGallery)
             </Button>
         </div>
         <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            <label
+                class="relative aspect-square border-2 border-dashed rounded-xl overflow-hidden flex flex-col items-center justify-center text-center cursor-pointer hover:bg-muted/50 transition-colors">
+                <input type="file" multiple @change="handleImageChange" class="hidden" :disabled="isLoading" />
+                <div class="flex flex-col items-center gap-2 p-4 text-muted-foreground">
+                    <span v-if="isLoading" class="animate-spin text-2xl">⏳</span>
+                    <span v-else class="text-3xl">+</span>
+                    <span class="text-sm font-medium">{{ isLoading ? 'Uploading...' : 'Upload Images' }}</span>
+                </div>
+            </label>
             <!-- Image Card 1 (Selected) -->
             <div v-for="image in images" class="relative aspect-square group cursor-pointer rounded-xl overflow-hidden"
                 :class="media.selectedImages.includes(image.id) ? 'ring-2 ring-primary ring-offset-2 ring-offset-background' : 'border border-border'"
@@ -128,15 +137,6 @@ onMounted(getImagesFromSelectedGallery)
                     <CheckIcon class="w-4 h-4" />
                 </div>
             </div>
-            
-            <label class="relative aspect-square border-2 border-dashed rounded-xl overflow-hidden flex flex-col items-center justify-center text-center cursor-pointer hover:bg-muted/50 transition-colors">
-                <input type="file" multiple @change="handleImageChange" class="hidden" :disabled="isLoading" />
-                <div class="flex flex-col items-center gap-2 p-4 text-muted-foreground">
-                    <span v-if="isLoading" class="animate-spin text-2xl">⏳</span>
-                    <span v-else class="text-3xl">+</span>
-                    <span class="text-sm font-medium">{{ isLoading ? 'Uploading...' : 'Upload Images' }}</span>
-                </div>
-            </label>
         </div>
 
         <div class="h-10 mt-4 flex items-center justify-center">

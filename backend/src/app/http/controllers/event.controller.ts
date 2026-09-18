@@ -444,6 +444,43 @@ export class EventController {
         }
     }
 
+    public static async saveEmailTemplate(request: Request, response: Response, next: NextFunction) {
+        try {
+            const { subject, htmlTemplate, variableMap } = request.body
+            const eventId = request.params.event_id as string
+
+            const template = await prisma.eventEmailTemplate.upsert({
+                where: { event_id: eventId },
+                update: {
+                    subject,
+                    htmlContent: htmlTemplate,
+                    variableMap: variableMap || {}
+                },
+                create: {
+                    event_id: eventId,
+                    subject,
+                    htmlContent: htmlTemplate,
+                    variableMap: variableMap || {}
+                }
+            })
+            response.send(template)
+        } catch (error) {
+            next(error)
+        }
+    }
+
+    public static async getEmailTemplate(request: Request, response: Response, next: NextFunction) {
+        try {
+            const eventId = request.params.event_id as string
+            const template = await prisma.eventEmailTemplate.findUnique({
+                where: { event_id: eventId }
+            })
+            response.send(template)
+        } catch (error) {
+            next(error)
+        }
+    }
+
     public static async unpublish(request: Request, response: Response, next: NextFunction) {
         try {
             response.send(await prisma.trailRace.update({

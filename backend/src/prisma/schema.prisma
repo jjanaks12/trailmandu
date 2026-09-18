@@ -487,6 +487,7 @@ model TrailRace {
   stages        Stage[]
   season_passes SeasonPass[]
   runners       EventRunner[]
+  email_template EventEmailTemplate?
   gallery_id    String?
   gallery       Gallery?      @relation(fields: [gallery_id], references: [id])
   partners      Partner[]
@@ -771,6 +772,21 @@ model Trek {
   bookings TrekBooking[]
 
   @@map("treks")
+}
+
+model EventEmailTemplate {
+  id          String    @id @default(cuid())
+  subject     String
+  htmlContent String    @db.LongText
+  variableMap Json      @default("{}")
+  
+  event_id    String    @unique
+  event       TrailRace @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
+
+  @@map("event_email_templates")
 }
 
 model TrekCategory {

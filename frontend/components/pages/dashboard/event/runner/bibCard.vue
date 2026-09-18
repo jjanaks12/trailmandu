@@ -16,6 +16,8 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 
 interface BibCardProps {
     runners?: EventRunner[]
@@ -45,9 +47,49 @@ const showDialiog = defineModel('show', {
     default: false
 })
 
-watch(() => props.runners, () => {
+const extraBibsCount = ref(0)
+const extraBibsStart = ref(1000)
+
+watch(() => props.runners, (runners) => {
     loadEventSettings()
+    if (runners && runners.length > 0) {
+        const maxBib = Math.max(...runners.map(r => parseInt(r.bib) || 0))
+        extraBibsStart.value = maxBib > 0 ? maxBib + 1 : 1000
+    }
 }, { immediate: true })
+
+const jumpBibNumber = ref('')
+const scrollToBib = () => {
+    if (!jumpBibNumber.value) return
+    const el = document.getElementById(`bib-card-${jumpBibNumber.value}`)
+    if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    } else {
+        alert('BIB not found in the current list')
+    }
+}
+
+const displayRunners = computed(() => {
+    const list = [...(props.runners || [])]
+    
+    if (extraBibsCount.value > 0) {
+        const targetLength = props.runners && props.runners.length > 0 
+            ? Math.max(...props.runners.map(r => String(r.bib || '').length))
+            : 1;
+        const refRunner = props.runners?.[0]
+        for (let i = 0; i < extraBibsCount.value; i++) {
+            list.push({
+                id: `extra-${i}`,
+                bib: (extraBibsStart.value + i).toString().padStart(targetLength, '0'),
+                stage_category_id: refRunner?.stage_category_id || '',
+                stage_category: refRunner?.stage_category || null,
+                personal: {}, // Empty so no name/flag shows
+            } as any)
+        }
+    }
+    
+    return list
+})
 
 const downloadPDF = () => {
     if (!import.meta.client) return
@@ -86,9 +128,29 @@ const getBibImage = (runner: EventRunner) => {
             </DialogHeader>
 
             <div class="flex-1 min-h-0 overflow-y-auto bg-gray-100 p-4 rounded-md">
-                <div ref="printArea" v-if="runners?.length" class="flex flex-col items-center gap-8 py-4">
+                
+                <div class="flex flex-wrap items-end gap-4 mb-4 bg-white/95 backdrop-blur-sm p-4 rounded-lg shadow-sm sticky top-0 z-10 border border-slate-200">
+                    <div class="space-y-2">
+                        <Label>Extra Blank BIBs</Label>
+                        <Input type="number" v-model.number="extraBibsCount" min="0" class="w-32" />
+                    </div>
+                    <div class="space-y-2" v-if="extraBibsCount > 0">
+                        <Label>Starting BIB Number</Label>
+                        <Input type="number" v-model.number="extraBibsStart" min="1" class="w-40" />
+                    </div>
+                    
+                    <div class="space-y-2 ml-auto border-l pl-4 border-slate-200">
+                        <Label>Find BIB</Label>
+                        <div class="flex items-center gap-2">
+                            <Input type="text" v-model="jumpBibNumber" @keyup.enter="scrollToBib" placeholder="Number..." class="w-24" />
+                            <Button variant="secondary" @click="scrollToBib">Go</Button>
+                        </div>
+                    </div>
+                </div>
+
+                <div ref="printArea" v-if="displayRunners.length" class="flex flex-col items-center gap-8 py-4">
                     <!-- Physical dimensions for standard A5 landscape bib -->
-                    <div v-for="runner in runners" :key="runner.id" style="
+                    <div v-for="runner in displayRunners" :key="runner.id" :id="`bib-card-${runner.bib}`" style="
                             width: 210mm; 
                             height: 148mm; 
                             position: relative; 
@@ -126,8 +188,8 @@ const getBibImage = (runner: EventRunner) => {
                             </div>
 
                             <!-- Flag -->
-                            <div v-if="eventSettings.bib_layout.flag"
-                                :class="runner.personal.country?.abbr ? `fi fi-${runner.personal.country.abbr.toLowerCase()}` : ''"
+                            <img v-if="eventSettings.bib_layout.flag && runner.personal.country?.abbr"
+                                :src="`https://flagcdn.com/${runner.personal.country.abbr.toLowerCase()}.svg`"
                                 :style="{
                                     position: 'absolute',
                                     top: (eventSettings.bib_layout.flag.top || 0) + '%',
@@ -135,7 +197,8 @@ const getBibImage = (runner: EventRunner) => {
                                     transform: 'translate(-50%, -50%)',
                                     width: ((eventSettings.bib_layout.flag.width || 44) / 10) + 'cqw',
                                     height: ((eventSettings.bib_layout.flag.height || 30) / 10) + 'cqw',
-                                }"></div>
+                                    objectFit: 'contain'
+                                }" />
 
                             <!-- Bib Number -->
                             <div v-if="eventSettings.bib_layout.bib" :style="{
@@ -164,8 +227,9 @@ const getBibImage = (runner: EventRunner) => {
                                     {{ runner.personal.middle_name }}
                                     {{ runner.personal.last_name }}
                                 </strong>
-                                <span style="width: 4.4cqw; height: 3.0cqw; background-size: cover; background-position: center; display: inline-block;"
-                                    :class="runner.personal.country?.abbr ? `fi fi-${runner.personal.country.abbr.toLowerCase()}` : ''"></span>
+                                <img v-if="runner.personal.country?.abbr"
+                                    :src="`https://flagcdn.com/${runner.personal.country.abbr.toLowerCase()}.svg`"
+                                    style="width: 4.4cqw; height: 3.0cqw; object-fit: contain; display: inline-block;" />
                             </div>
                             <em style="color: #fff; font-size: 18cqw; font-weight: bold; font-style: normal;">{{
                                 runner.bib }}</em>

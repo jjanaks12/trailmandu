@@ -4,7 +4,7 @@ import { paymentStatus, type EventRunner, type PaymentStatus, type Stage, type P
 import { useAxios } from '~/services/axios'
 import { useRoute, useRouter } from 'vue-router'
 import { watchDebounced } from '@vueuse/core'
-import { CommandIcon, DownloadIcon, LoaderIcon } from 'lucide-vue-next'
+import { CommandIcon, DownloadIcon, LoaderIcon, MailIcon } from 'lucide-vue-next'
 import { onKeyStroke } from '@vueuse/core'
 import RunnerItem from './RunnerItem.vue'
 import { showPaymentImage } from '~/lib/filters'
@@ -31,6 +31,8 @@ const runnerDetailDialog = ref(false)
 const printDialog = ref(false)
 const runnerPaymentDialog = ref(false)
 const showRunnerEdit = ref(false)
+const isMassEmailLoading = ref(false)
+const massEmailDialog = ref(false)
 
 const runners = ref<EventRunner[]>([])
 const stageID = useRouteQuery('stage_id', null)
@@ -109,6 +111,22 @@ const reset = () => {
     genderOpt.value = null
     runners.value = []
     fetch()
+}
+
+const sendEventBriefing = async () => {
+    isMassEmailLoading.value = true
+    try {
+        const payload = {
+            runnerIds: runners.value.map(r => r.id),
+        }
+        const { data } = await axios.post(`/events/${route.params.id}/runners/mass-email`, payload)
+        toast.success(data.message || 'Mass email queued successfully!')
+        massEmailDialog.value = false
+    } catch (e: any) {
+        toast.error(e.response?.data?.message || 'Failed to queue emails')
+    } finally {
+        isMassEmailLoading.value = false
+    }
 }
 
 const downloadCSV = async () => {
@@ -218,6 +236,10 @@ onUnmounted(() => {
                     </InputGroup>
                     <div class="flex justify-end gap-2 sticky top-[83px]" v-if="stageID">
                         <LoaderIcon class="animate-spin" v-if="isLoading" />
+                        <Button variant="secondary" class="rounded-full" @click="massEmailDialog = true">
+                            <MailIcon class="w-4 h-4 mr-2" />
+                            Send event briefing
+                        </Button>
                         <Button variant="secondary" class="rounded-full" @click="downloadCSV">
                             <DownloadIcon />
                             Download CSV
@@ -412,6 +434,53 @@ onUnmounted(() => {
             </DialogHeader>
             <PagesDashboardEventRunnerForm :runner="selectedRunner" :stageList="stages"
                 @updated="fetch(); showRunnerEdit = false; selectedRunner = null" />
+        </DialogContent>
+    </Dialog>
+    <Dialog :open="massEmailDialog" @update:open="massEmailDialog = false">
+        <DialogContent class="sm:max-w-[600px]">
+            <DialogHeader>
+                <DialogTitle>Send Event Briefing</DialogTitle>
+                <DialogDescription>
+                    You are about to send an email to <strong>{{ runners.length }}</strong> runners matching the current
+                    filter.
+                </DialogDescription>
+            </DialogHeader>
+
+            <div class="space-y-4">
+                <div class="bg-gray-50 border p-3 rounded-lg text-sm text-gray-700">
+                    <p class="font-medium mb-2">Active Filters:</p>
+                    <ul class="list-disc pl-5 space-y-1">
+                        <li v-if="stageID">Stage: {{stages.find(s => s.id === stageID)?.name}}</li>
+                        <li v-if="stageCategoryID">Category: {{stageCategoryList.find(c => c.id ===
+                            stageCategoryID)?.name }}</li>
+                        <li v-if="paymentStatusOpt">Payment Status: {{ paymentStatusOpt }}</li>
+                        <li v-if="paymentTypeOpt">Payment Type: {{ paymentTypeOpt }}</li>
+                        <li v-if="genderOpt">Gender: {{ genderOpt.name }}</li>
+                        <li v-if="searchText">Search: "{{ searchText }}"</li>
+                        <li
+                            v-if="!stageID && !stageCategoryID && !paymentStatusOpt && !paymentTypeOpt && !genderOpt && !searchText">
+                            No specific filters applied. Sending to all runners in this view.</li>
+                    </ul>
+                </div>
+
+                <div class="max-h-[200px] overflow-y-auto border rounded-lg p-3">
+                    <p class="font-medium text-sm text-gray-700 mb-2">Runners List:</p>
+                    <div class="flex flex-wrap gap-2">
+                        <span v-for="runner in runners" :key="runner.id"
+                            class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary">
+                            {{ runner.personal.first_name }} {{ runner.personal.last_name }}
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <DialogFooter>
+                <Button modifier="outline" @click="massEmailDialog = false">Cancel</Button>
+                <Button @click="sendEventBriefing" :disabled="isMassEmailLoading || runners.length === 0">
+                    <LoaderIcon v-if="isMassEmailLoading" class="animate-spin w-4 h-4 mr-2" />
+                    Confirm & Send
+                </Button>
+            </DialogFooter>
         </DialogContent>
     </Dialog>
 </template>

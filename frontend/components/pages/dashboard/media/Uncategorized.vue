@@ -40,16 +40,16 @@ const fetchImages = async (append = false) => {
             per_page: params.value.per_page
         }
     })
-    
+
     if (append) {
         uncategories.value.push(...data.data)
     } else {
         uncategories.value = data.data
     }
-    
+
     params.value.total_page = data.total_page
     params.value.total = data.total
-    
+
     selectedIds.value = uncategories.value.map(() => null)
 }
 
@@ -229,8 +229,8 @@ onMounted(() => {
         <div class="flex items-center justify-between py-5 px-1 mb-4 sticky top-[75px] bg-white z-10">
             <div class="grow">
                 <strong class="text-xl">Uncategorised
-                    <span v-if="isCardDropOver"
-                        class="ml-2 text-sm font-normal text-primary animate-pulse">Drop here to unlink</span>
+                    <span v-if="isCardDropOver" class="ml-2 text-sm font-normal text-primary animate-pulse">Drop here to
+                        unlink</span>
                 </strong>
             </div>
             <div class="flex gap-2">
@@ -263,9 +263,6 @@ onMounted(() => {
             </div>
         </div>
         <div class="grid grid-cols-4 gap-2">
-            <PagesDashboardMediaCard v-for="(image, index) in uncategories" v-model:selected="selectedIds[index]"
-                :key="`uncategories_${index}`" :image="image" gallery-id="" @update="emit('refresh')" />
-
             <label
                 class="relative aspect-square border-2 border-dashed rounded-xl overflow-hidden flex flex-col items-center justify-center text-center cursor-pointer hover:bg-muted/50 transition-colors">
                 <input type="file" multiple @change="handleImageChange" class="hidden" :disabled="isLoading" />
@@ -275,8 +272,10 @@ onMounted(() => {
                     <span class="text-sm font-medium">{{ isLoading ? 'Uploading...' : 'Upload Images' }}</span>
                 </div>
             </label>
+            <PagesDashboardMediaCard v-for="(image, index) in uncategories" v-model:selected="selectedIds[index]"
+                :key="`uncategories_${index}`" :image="image" gallery-id="" @update="emit('refresh')" />
         </div>
-        
+
         <div class="h-10 mt-4 flex items-center justify-center">
             <Loader2Icon v-if="params.current < params.total_page" class="animate-spin text-muted-foreground" />
         </div>
