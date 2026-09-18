@@ -1257,6 +1257,10 @@ model EmailLog {
   subject    String?
   status     String   // "SUCCESS", "FAILED"
   error      String?  @db.Text
+  payload    Json?
+  parentId   String?
+  parent     EmailLog?  @relation("ResendHistory", fields: [parentId], references: [id])
+  children   EmailLog[] @relation("ResendHistory")
   created_at DateTime @default(now())
 
   @@map("email_logs")

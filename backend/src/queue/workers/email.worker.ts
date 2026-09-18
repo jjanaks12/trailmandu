@@ -2,18 +2,16 @@ import { Worker, Job } from 'bullmq';
 import IORedis from 'ioredis';
 import nodemailer from 'nodemailer';
 import { prisma } from '@/app/lib/services/prisma.service';
-import fs from 'fs';
-import path from 'path';
 
 
 const redisConnection = new IORedis(process.env.REDIS_URL || 'redis://localhost:6379', { maxRetriesPerRequest: null });
 
-const isProd = process.env.NODE_ENV === 'production';
+const isProd = process.env.MAILTRAP_MODE === 'production';
 
 // Initialize Mailtrap or default SMTP
 const transporter = nodemailer.createTransport({
     host: process.env.MAIL_HOST || (isProd ? 'send.smtp.mailtrap.io' : 'sandbox.smtp.mailtrap.io'),
-    port: Number(process.env.MAIL_PORT) || (isProd ? 587 : 2525),
+    port: Number(process.env.MAIL_PORT) || 587,
     auth: {
         user: process.env.MAIL_USER || (isProd ? 'api' : (process.env.MAILTRAP_SANDBOX_USER || '')),
         pass: process.env.MAIL_PASS || (isProd ? process.env.MAILTRAP_TOKEN : (process.env.MAILTRAP_SANDBOX_PASS || ''))
@@ -68,7 +66,9 @@ export const emailWorker = new Worker('emailQueue', async (job: Job) => {
             data: {
                 recipient: recipientEmail,
                 subject: finalSubject,
-                status: 'SUCCESS'
+                status: 'SUCCESS',
+                payload: job.data,
+                parentId: job.data.resendParentId || null
             }
         });
 
@@ -82,7 +82,9 @@ export const emailWorker = new Worker('emailQueue', async (job: Job) => {
                     recipient: recipientEmail,
                     subject: finalSubject,
                     status: 'FAILED',
-                    error: error.message || 'Unknown error'
+                    error: error.message || 'Unknown error',
+                    payload: job.data,
+                    parentId: job.data.resendParentId || null
                 }
             });
         } catch (dbError) {

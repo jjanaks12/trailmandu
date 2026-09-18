@@ -20,6 +20,8 @@ interface EmailLog {
     status: 'SUCCESS' | 'FAILED' | 'WAITING' | 'ACTIVE' | 'DELAYED' | 'QUEUED'
     error: string | null
     created_at: string
+    payload?: any
+    parentId?: string | null
 }
 
 const counts = ref<{
@@ -69,6 +71,32 @@ const getBadgeVariant = (status: string) => {
 }
 
 const selectedError = ref<string | null>(null)
+
+const resendLog = ref<EmailLog | null>(null)
+const newRecipientEmail = ref('')
+const isResending = ref(false)
+
+const openResendDialog = (log: EmailLog) => {
+    resendLog.value = log
+    newRecipientEmail.value = log.recipient
+}
+
+const submitResend = async () => {
+    if (!resendLog.value) return
+    isResending.value = true
+    try {
+        await axios.post(`/queues/${resendLog.value.id}/resend`, {
+            newRecipientEmail: newRecipientEmail.value !== resendLog.value.recipient ? newRecipientEmail.value : undefined
+        })
+        await fetchCountsAndLogs()
+        resendLog.value = null
+    } catch (e: any) {
+        console.error('Failed to resend email', e)
+        alert(e.response?.data?.error || 'Failed to resend email. It might not have a payload stored.')
+    } finally {
+        isResending.value = false
+    }
+}
 
 onMounted(() => {
     fetchCountsAndLogs()
@@ -159,6 +187,7 @@ onMounted(() => {
                             <TableHead>Recipient</TableHead>
                             <TableHead>Subject</TableHead>
                             <TableHead>Status</TableHead>
+                            <TableHead class="text-right">Actions</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -170,10 +199,20 @@ onMounted(() => {
                                 <Badge :variant="getBadgeVariant(log.status)">
                                     {{ log.status }}
                                 </Badge>
-                                <div v-if="log.error" class="text-xs text-red-500 mt-1 truncate max-w-[200px] cursor-pointer hover:underline"
+                                <div v-if="log.error"
+                                    class="text-xs text-red-500 mt-1 truncate max-w-[200px] cursor-pointer hover:underline"
                                     @click="selectedError = log.error" title="Click to view full error">
                                     {{ log.error }}
                                 </div>
+                                <div v-if="log.parentId" class="text-[10px] text-muted-foreground mt-1"
+                                    :title="'Resent from: ' + log.parentId">
+                                    Resent Email
+                                </div>
+                            </TableCell>
+                            <TableCell class="text-right">
+                                <Button v-if="log.payload" modifier="outline" size="sm" @click="openResendDialog(log)">
+                                    Resend
+                                </Button>
                             </TableCell>
                         </TableRow>
                         <TableRow v-if="!logs.length">
@@ -191,11 +230,34 @@ onMounted(() => {
                 <DialogHeader>
                     <DialogTitle>Error Details</DialogTitle>
                 </DialogHeader>
-                <div class="mt-4 p-4 bg-muted rounded-md overflow-auto max-h-96 text-sm font-mono whitespace-pre-wrap break-words">
+                <div
+                    class="mt-4 p-4 bg-muted rounded-md overflow-auto max-h-96 text-sm font-mono whitespace-pre-wrap break-words">
                     {{ selectedError }}
                 </div>
                 <DialogFooter>
                     <Button @click="selectedError = null">Close</Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+
+        <Dialog :open="resendLog !== null" @update:open="resendLog = null">
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>Resend Email</DialogTitle>
+                </DialogHeader>
+                <div class="space-y-4 py-4" v-if="resendLog">
+                    <div class="space-y-2">
+                        <Label>Recipient Email</Label>
+                        <Input v-model="newRecipientEmail" placeholder="Enter recipient email" />
+                        <p class="text-xs text-muted-foreground">You can change the email address before resending.</p>
+                    </div>
+                </div>
+                <DialogFooter>
+                    <Button modifier="outline" @click="resendLog = null" :disabled="isResending">Cancel</Button>
+                    <Button @click="submitResend" :disabled="isResending">
+                        <LoaderIcon v-if="isResending" class="w-4 h-4 mr-2 animate-spin" />
+                        Send Now
+                    </Button>
                 </DialogFooter>
             </DialogContent>
         </Dialog>

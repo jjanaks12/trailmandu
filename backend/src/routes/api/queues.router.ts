@@ -47,4 +47,40 @@ router.get('/', verifyAccessToken, async (req: Request, res: Response) => {
     }
 })
 
+router.post('/:id/resend', verifyAccessToken, async (req: Request, res: Response) => {
+    try {
+        const logId = req.params.id;
+        const { newRecipientEmail } = req.body;
+
+        const emailLog = await prisma.emailLog.findUnique({
+            where: { id: logId }
+        });
+
+        if (!emailLog) {
+            res.status(404).json({ error: 'Email log not found' });
+            return;
+        }
+
+        if (!emailLog.payload) {
+            res.status(400).json({ error: 'Cannot resend this email because its payload was not stored' });
+            return;
+        }
+
+        const payload: any = typeof emailLog.payload === 'string' ? JSON.parse(emailLog.payload) : emailLog.payload;
+
+        if (newRecipientEmail) {
+            payload.to = newRecipientEmail;
+        }
+
+        payload.resendParentId = logId;
+
+        await emailQueue.add('sendEmail', payload);
+
+        res.json({ message: 'Email queued for resending successfully' });
+    } catch (error) {
+        console.error('Failed to resend email:', error);
+        res.status(500).json({ error: 'Failed to resend email' });
+    }
+});
+
 export default router
