@@ -85,7 +85,7 @@ onMounted(async () => {
                             if (stage) {
                                 selectedVolunteer = volunteer
                                 checkpoints = stage.stage_categories
-                                    .map(sc => sc.checkpoints)
+                                    .map(sc => sc.checkpoints || [])
                                     .reduce((acc, curr) => ([...acc, ...curr]), [])
                                 showAssignModal = true
                             }

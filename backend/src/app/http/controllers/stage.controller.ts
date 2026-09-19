@@ -18,7 +18,9 @@ export class StageController {
                     runners: true,
                     thumbnail: true,
                     guide_book_file: true,
-                    stage_categories: true,
+                    stage_categories: {
+                        include: { checkpoints: true }
+                    },
                     volunteers: {
                         include: {
                             personal: true,
