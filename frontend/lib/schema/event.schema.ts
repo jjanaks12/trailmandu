@@ -92,7 +92,7 @@ export const trailRaceVolunteer = Y.object({
     gender_id: Y.string().required().label("Gender"),
     // size_id: Y.string().required().label("Shirt size"),
     // age_category_id: Y.string().required().label("Age category"),
-    description: Y.string().label("Volunteer detail")
+    // description: Y.string().label("Volunteer detail")
 })
 
 export const stageCategorySchema = Y.object({

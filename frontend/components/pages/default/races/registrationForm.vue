@@ -655,14 +655,14 @@ onMounted(() => {
                                                     @update:model-value="(checked) => toggleAddon(addon.id, checked === true)" />
                                                 <div>
                                                     <span class="block font-medium text-sm text-gray-900">{{ addon.name
-                                                        }}</span>
+                                                    }}</span>
                                                     <span
                                                         class="text-[10px] text-primary uppercase font-bold tracking-wider"
                                                         v-if="addon.is_mandatory">Mandatory</span>
                                                 </div>
                                             </div>
                                             <span class="text-sm font-semibold text-gray-900">Rs. {{ addon.price
-                                                }}</span>
+                                            }}</span>
                                         </label>
                                     </div>
                                 </div>

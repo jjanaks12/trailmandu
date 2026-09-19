@@ -91,7 +91,7 @@ export const trailRaceVolunteer = Y.object({
     stage_id: Y.string().required().label("Stage"),
     // age_category_id: Y.string().required().label("Age category"),
     event_id: Y.string().required().label("Event"),
-    description: Y.string().label("Description")
+    // description: Y.string().label("Description")
 })
 
 export const stageCategorySchema = Y.object({
