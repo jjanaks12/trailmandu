@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from "express"
 import moment from "moment"
+import fs from "fs"
 
 import { stageSchema } from "@/app/lib/schema/event.schema"
 import { FileHandler } from "@/app/lib/services/file.service"
@@ -30,7 +31,8 @@ export class StageController {
                 }
             });
             response.send(data);
-        } catch (error) {
+        } catch (error: any) {
+            fs.writeFileSync('error_log.txt', error.toString() + '\n' + error.stack)
             next(error)
         }
     }
