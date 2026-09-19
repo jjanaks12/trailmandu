@@ -50,9 +50,7 @@ onMounted(async () => {
             </SelectContent>
         </Select>
     </div>
-    {{ stage?.volunteers }}
-
-    <!-- <Table>
+    <Table>
         <TableHeader>
             <TableHead>S.N.</TableHead>
             <TableHead>Details</TableHead>
@@ -109,7 +107,7 @@ onMounted(async () => {
                 </TableCell>
             </TableRow>
         </TableBody>
-    </Table> -->
+    </Table>
     <Dialog :open="showAssignModal" @update:open="showAssignModal = false; selectedVolunteer = null"
         v-if="selectedVolunteer">
         <DialogContent>

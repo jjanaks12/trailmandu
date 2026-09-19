@@ -20,7 +20,8 @@ export class StageController {
                     guide_book_file: true,
                     volunteers: {
                         include: {
-                            personal: true
+                            personal: true,
+                            checkpoints: true
                         }
                     }
                 }
