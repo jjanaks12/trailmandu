@@ -18,7 +18,11 @@ export class StageController {
                     runners: true,
                     thumbnail: true,
                     guide_book_file: true,
-                    volunteers: true
+                    volunteers: {
+                        include: {
+                            personal: true
+                        }
+                    }
                 }
             });
             response.send(data);
