@@ -114,7 +114,10 @@ export class VolunteerController {
 
             // difference between old and new checkpoints
             const oldCheckpoints = volunteer.checkpoints.map((checkpoint: any) => checkpoint.id)
-            const newCheckpoints = request.body.checkpoints || []
+            let newCheckpoints = request.body.checkpoints || []
+            if (!Array.isArray(newCheckpoints)) {
+                newCheckpoints = [newCheckpoints]
+            }
             const newCheckpointsIds = newCheckpoints.filter((id: string) => !oldCheckpoints.includes(id))
             const oldCheckpointsIds = oldCheckpoints.filter((id: string) => !newCheckpoints.includes(id))
 

@@ -17,7 +17,15 @@ const form = ref<FormContext>()
 
 const formSubmit = async (values: any) => {
     isLoading.value = true
-    await assignVolunteerToCheckpoint(props.volunteer.id, values)
+
+    const payload = { ...values }
+    if (payload.checkpoints && !Array.isArray(payload.checkpoints)) {
+        payload.checkpoints = [payload.checkpoints]
+    } else if (!payload.checkpoints) {
+        payload.checkpoints = []
+    }
+
+    await assignVolunteerToCheckpoint(props.volunteer.id, payload)
 
     isLoading.value = false
     emit('update')
