@@ -8,14 +8,12 @@ import KVRLogo from '~/assets/images/kvr-summit-logo.png'
 import trailmanduLogo from '~/assets/images/logo.png'
 import { LoaderIcon, XIcon, ArrowLeftIcon, DownloadIcon } from 'lucide-vue-next'
 import { getDuration, sortRunner } from '~/lib/filters/runner'
-import { useAuthStore } from '~/store/auth'
 
 definePageMeta({
     layout: 'simple'
 })
 
 const { genders } = storeToRefs(useAppStore())
-const { user } = storeToRefs(useAuthStore())
 const { axios } = useAxios()
 const route = useRoute()
 
@@ -33,11 +31,12 @@ const filteredRunners = computed(() => updatedRunners.value
         || (runner.personal.last_name || '').toLowerCase().includes(searchText.value.toLowerCase())
         || runner.bib.toString().includes(searchText.value))
 )
-const showResult = computed(() => !!user.value)
 
 const { data: stageCategoryList } = await useAsyncData<StageCategory[]>('stage-category', () => axios.get(`/events/${route.params.stage_id as string}/stage_categories`).then(res => res.data))
 
 const { data: stage } = await useAsyncData<Stage>('stage', () => axios.get(`/events/stages/${route.params.stage_id as string}`).then(res => res.data))
+
+const config = useRuntimeConfig()
 
 useHead(() => {
     if (!stage.value) return { title: 'Loading Results...' }
@@ -46,7 +45,7 @@ useHead(() => {
     const currentDescription = stage.value.description || `View race results for ${stage.value.name} organized by Trailmandu.`
     const canonical = `https://trailmandu.com/races/${route.params.slug}/stage/${route.params.stage_id}/result`
     const image = stage.value.thumbnail?.file_name
-        ? showImage(stage.value.thumbnail.file_name)
+        ? config.public.serverUrl + 'resources/images/' + stage.value.thumbnail.file_name
         : 'https://trailmandu.com/logo.png'
 
     return {
@@ -118,7 +117,7 @@ const fetchRunnerResult = async () => {
 }
 
 const downloadCSV = () => {
-    const headers = ['Family Name', 'First Name', 'Gender', 'Birthdate', 'Nationality', 'ITRA ID', 'Bib number']
+    const headers = ['Family Name', 'First Name', 'Gender', 'Birthdate', 'Nationality', 'ITRA ID', 'Bib number', 'Time']
 
     const rows = filteredRunners.value.map(runner => {
         const p = runner.personal
@@ -129,7 +128,8 @@ const downloadCSV = () => {
             p?.date_of_birth ? formatDate(p.date_of_birth, 'YYYY-MM-DD') : '',
             p?.country?.abbr || p?.country?.code || p?.country?.name || '',
             p?.itra_id || '',
-            runner.bib || ''
+            runner.bib || '',
+            runner.volunteer_on_checkpoints ? getFinalDuration(runner.volunteer_on_checkpoints) : ''
         ]
     })
 
@@ -142,37 +142,27 @@ const downloadCSV = () => {
     const url = URL.createObjectURL(blob)
     const link = document.createElement("a")
     link.setAttribute("href", url)
-    
+
     const nameParts = [stage.value?.name || 'results']
     if (selectStage.value) nameParts.push(selectStage.value.name)
     if (selectGender.value) {
         const gender = genders.value.find(g => g.id === selectGender.value)
         if (gender) nameParts.push(gender.name)
     }
-    
+
     link.setAttribute("download", `${nameParts.join('-')}.csv`)
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
 }
 
-const init = () => {
-    if (showResult.value) {
-        if (!['Admin'].includes(user.value?.role.name ?? '')) {
-            navigateTo('/404')
-        }
-    }
-}
-
 watch([selectGender, selectStage], fetchRunnerResult)
-watch(user, init)
 
-onMounted(init)
+onMounted(fetchRunnerResult)
 </script>
 
 <template>
-    <section class="result__section bg-black bg-repeat text-white pb-12 w-full min-h-screen relative z-[1]"
-        v-if="showResult">
+    <section class="result__section bg-black bg-repeat text-white pb-12 w-full min-h-screen relative z-[1]">
         <header class="pt-12 pb-20 relative">
             <Button as-child modifier="outline" variant="light" class="absolute top-4 left-4">
                 <NuxtLink :to="$localePath({ name: 'races-slug', params: { slug: route.params.slug as string } })">
@@ -194,10 +184,11 @@ onMounted(init)
                 v-if="selectStage">
                 {{ formatDate(selectStage?.start as string, 'MMM D, YYYY') }}
             </time>
-            <span
-                class="font-bold block block--right translate-y-full  [--block-bg:var(--color-blue-400)] [--block-color:var(--color-white)]">#KVRSUMMITCHALLENGE</span>
+            <!-- <span
+                class="font-bold block block--right translate-y-full  [--block-bg:var(--color-blue-400)] [--block-color:var(--color-white)]">#KVRSUMMITCHALLENGE</span> -->
             <div class="container space-y-3">
-                <h1 class="text-4xl uppercase font-bold text-center">Kathmandu's ultimate five summit challenge</h1>
+                <h1 class="text-4xl uppercase font-bold text-center" v-if="stage?.event">{{ stage.event.name }}</h1>
+                <h1 class="text-4xl uppercase font-bold text-center" v-else>{{ stage?.name }}</h1>
                 <div class="logo w-[280px] mx-auto">
                     <img :src="KVRLogo" alt="Kathmandu's ultimate five summit challenge">
                 </div>
@@ -245,6 +236,7 @@ onMounted(init)
                         <TableHead>Nationality</TableHead>
                         <TableHead>ITRA ID</TableHead>
                         <TableHead>Bib number</TableHead>
+                        <TableHead>Time</TableHead>
                     </TableRow>
                 </TableHeader>
                 <TableBody class="data-body">
@@ -258,6 +250,8 @@ onMounted(init)
                             runner.personal?.country?.name || '-' }}</TableCell>
                         <TableCell>{{ runner.personal?.itra_id || '-' }}</TableCell>
                         <TableCell>{{ runner.bib || '-' }}</TableCell>
+                        <TableCell>{{ runner.volunteer_on_checkpoints ?
+                            getFinalDuration(runner.volunteer_on_checkpoints) : '-' }}</TableCell>
                     </TableRow>
                 </TableBody>
             </Table>

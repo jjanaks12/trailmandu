@@ -3,9 +3,9 @@
 # ==========================================
 # Deployment Configuration
 # ==========================================
-SERVER_IP="185.181.252.149"  # <-- CHANGE THIS TO YOUR ACTUAL IP
+SERVER_IP="185.181.252.217"
 USERNAME="trailmandu"
-REMOTE_PATH="public_html" # Relative to your cPanel home directory. Usually public_html for the main domain
+REMOTE_PATH="public_html"
 BUILD_CMD="npm run build"
 UPLOAD_DIR="./frontend/.output"
 ZIP_NAME="deploy.zip"
