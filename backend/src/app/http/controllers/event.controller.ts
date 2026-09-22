@@ -169,11 +169,52 @@ export class EventController {
 
     public static async currentRace(request: Request, response: Response, next: NextFunction) {
         try {
-            const events = await prisma.trailRace.findFirst({
+            const allRaces = await prisma.trailRace.findMany({
                 where: {
                     deleted_at: null,
                     published_at: { not: null }
                 },
+                select: {
+                    id: true,
+                    start: true,
+                    end: true,
+                    created_at: true
+                }
+            })
+
+            if (!allRaces.length) {
+                response.send(null)
+                return
+            }
+
+            const now = moment()
+            
+            const futureRaces = allRaces.filter(r => moment(r.end).isAfter(now)).sort((a, b) => moment(a.start).diff(moment(b.start)))
+            const pastRaces = allRaces.filter(r => moment(r.end).isSameOrBefore(now)).sort((a, b) => moment(b.end).diff(moment(a.end)))
+
+            const nextRace = futureRaces[0]
+            const lastRace = pastRaces[0]
+
+            let selectedRaceId: string
+
+            if (lastRace && now.diff(moment(lastRace.end), 'weeks', true) < 1) {
+                // lastRace finished less than 1 week ago
+                if (nextRace && moment(nextRace.start).diff(now, 'weeks', true) < 1) {
+                    selectedRaceId = nextRace.id
+                } else {
+                    selectedRaceId = lastRace.id
+                }
+            } else {
+                // lastRace finished more than 1 week ago, or no lastRace
+                if (nextRace && moment(nextRace.start).diff(now, 'months', true) < 1.5) {
+                    selectedRaceId = nextRace.id
+                } else {
+                    selectedRaceId = lastRace ? lastRace.id : nextRace?.id || allRaces[0].id
+                }
+            }
+
+            const event = await prisma.trailRace.findUnique({
+                where: { id: selectedRaceId },
                 include: {
                     stages: {
                         where: {
@@ -192,11 +233,10 @@ export class EventController {
                             stages: true
                         }
                     }
-                },
-                orderBy: [{ created_at: 'desc' }]
+                }
             })
 
-            response.send(events)
+            response.send(event)
         } catch (error) {
             next(error)
         }

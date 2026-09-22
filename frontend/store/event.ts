@@ -11,9 +11,16 @@ export const useEventStore = defineStore('event', () => {
     const { isLoading, params } = useModalMeta()
     const { axios } = useAxios()
 
-    const currentStage = computed(() => currentRace.value?.stages
-        .filter((stage) => stage.stage_categories.length > 0)
-        .filter((stage) => stage.stage_categories.some((category) => moment.utc(category.start).isAfter(moment.utc())))[0])
+    const currentStage = computed(() => {
+        const validStages = currentRace.value?.stages.filter((stage) => stage.stage_categories.length > 0) || []
+        if (validStages.length === 0) return undefined
+        
+        const futureStage = validStages.filter((stage) => 
+            stage.stage_categories.some((category) => moment.utc(category.start).isAfter(moment.utc()))
+        )[0]
+
+        return futureStage || validStages[validStages.length - 1]
+    })
 
     const fetch = async () => {
         const { data } = await axios.get<APIRequest<TrailRace[]>>('/events', {
