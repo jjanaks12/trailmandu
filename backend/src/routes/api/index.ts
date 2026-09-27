@@ -24,6 +24,7 @@ import pageRouter from '@/routes/api/page.router'
 import teamRouter from '@/routes/api/team.router'
 import reviewRouter from '@/routes/api/review.router'
 import queueRouter from '@/routes/api/queues.router'
+import raceUpdateRouter from '@/routes/api/race_update.router'
 
 const router = Router()
 
@@ -51,5 +52,6 @@ router.use('/pages', pageRouter)
 router.use('/teams', teamRouter)
 router.use('/reviews', reviewRouter)
 router.use('/queues', queueRouter)
+router.use('/race-updates', raceUpdateRouter)
 
 export default router

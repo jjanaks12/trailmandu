@@ -11,38 +11,117 @@ router.get('/', verifyAccessToken, async (req: Request, res: Response) => {
         res.setHeader('Pragma', 'no-cache')
         res.setHeader('Expires', '0')
 
+        const page = parseInt(req.query.page as string) || 1;
+        const limit = parseInt(req.query.limit as string) || 20;
+        const statusFilter = (req.query.status as string)?.toLowerCase();
+        
+        const startDateStr = req.query.startDate as string;
+        const endDateStr = req.query.endDate as string;
+        let startDate: Date | undefined;
+        let endDate: Date | undefined;
+        if (startDateStr) startDate = new Date(startDateStr);
+        if (endDateStr) endDate = new Date(endDateStr);
+
+        const skip = (page - 1) * limit;
+
         const counts = await emailQueue.getJobCounts()
-        const logs = await prisma.emailLog.findMany({
-            orderBy: { created_at: 'desc' },
-            take: 100
-        })
+        
+        let dbStatusFilter;
+        if (statusFilter === 'completed') dbStatusFilter = 'SUCCESS';
+        else if (statusFilter === 'failed') dbStatusFilter = 'FAILED';
 
-        const queuedJobs = await emailQueue.getJobs(['waiting', 'active', 'delayed'])
-        const mappedQueueJobs = await Promise.all(queuedJobs.map(async (job: any) => {
-            const { replacements, to, subject, props } = job.data;
-            let recipientEmail = to;
-            if (!recipientEmail && replacements?.user?.email) recipientEmail = replacements.user.email;
-            if (!recipientEmail && props?.recipients?.length > 0) recipientEmail = props.recipients[0].email;
-            
-            let finalSubject = subject || props?.subject || replacements?.title || 'No Subject';
-            const state = await job.getState();
-            
-            return {
-                id: `queue-${job.id}`,
-                recipient: recipientEmail || 'unknown',
-                subject: finalSubject,
-                status: state ? state.toUpperCase() : 'QUEUED',
-                created_at: new Date(job.timestamp),
-                error: null
+        // Determine which queue statuses to fetch
+        let queueStatusesToFetch: any[] = [];
+        if (statusFilter) {
+            if (['waiting', 'active', 'delayed', 'failed', 'completed', 'paused'].includes(statusFilter)) {
+                queueStatusesToFetch = [statusFilter];
             }
-        }));
+        } else {
+            queueStatusesToFetch = ['failed'];
+        }
 
-        const mergedLogs = [...mappedQueueJobs, ...logs].sort((a, b) => {
-            return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-        }).slice(0, 100);
+        let mappedQueueJobs: any[] = [];
+        
+        if (queueStatusesToFetch.length > 0) {
+            const queuedJobs = await emailQueue.getJobs(queueStatusesToFetch);
+            
+            mappedQueueJobs = await Promise.all(queuedJobs.map(async (job: any) => {
+                const { replacements, to, subject, props } = job.data || {};
+                let recipientEmail = to;
+                if (!recipientEmail && replacements && replacements.user && replacements.user.email) recipientEmail = replacements.user.email;
+                if (!recipientEmail && props && props.recipients && props.recipients.length > 0) recipientEmail = props.recipients[0].email;
+                
+                let finalSubject = subject || (props && props.subject) || (replacements && replacements.title) || 'No Subject';
+                const state = await job.getState();
+                let mappedStatus = state ? state.toUpperCase() : 'QUEUED';
+                if (mappedStatus === 'COMPLETED') mappedStatus = 'SUCCESS';
+                
+                return {
+                    id: `queue-${job.id}`,
+                    recipient: recipientEmail || 'unknown',
+                    subject: finalSubject,
+                    status: mappedStatus,
+                    created_at: new Date(job.timestamp),
+                    error: job.failedReason || null,
+                    payload: job.data
+                }
+            }));
+        }
 
-        res.json({ email: counts, logs: mergedLogs })
+        // Apply date filtering to queue jobs in memory
+        if (startDate) mappedQueueJobs = mappedQueueJobs.filter(j => j.created_at >= startDate);
+        if (endDate) mappedQueueJobs = mappedQueueJobs.filter(j => j.created_at <= endDate);
+
+        // Sort queue jobs descending
+        // mappedQueueJobs.sort((a, b) => b.created_at.getTime() - a.created_at.getTime());
+
+        // Setup DB query
+        const whereClause: any = dbStatusFilter ? { status: dbStatusFilter } : {};
+        if (startDate || endDate) {
+            whereClause.created_at = {};
+            if (startDate) whereClause.created_at.gte = startDate;
+            if (endDate) whereClause.created_at.lte = endDate;
+        }
+
+        let totalDb = 0;
+        if (!statusFilter || statusFilter === 'completed' || statusFilter === 'failed') {
+            totalDb = await prisma.emailLog.count({ where: whereClause });
+        }
+
+        const totalQueue = mappedQueueJobs.length;
+        const total = totalDb + totalQueue;
+
+        let paginatedLogs: any[] = [];
+        let dbSkip = 0;
+        let dbTake = limit;
+
+        if (skip < totalQueue) {
+            // We can take items from the queue array for this page
+            const queueItems = mappedQueueJobs.slice(skip, skip + limit);
+            paginatedLogs.push(...queueItems);
+            
+            // If the queue items don't fill the page, we fetch the rest from DB starting at 0
+            dbTake = limit - queueItems.length;
+            dbSkip = 0;
+        } else {
+            // We completely skip the queue array and only fetch from DB
+            dbTake = limit;
+            dbSkip = skip - totalQueue;
+        }
+
+        if (dbTake > 0 && (!statusFilter || statusFilter === 'completed' || statusFilter === 'failed')) {
+            const dbLogs = await prisma.emailLog.findMany({
+                where: whereClause,
+                orderBy: { created_at: 'desc' },
+                skip: dbSkip,
+                take: dbTake
+            });
+            paginatedLogs.push(...dbLogs);
+        }
+
+        res.json({ email: counts, logs: paginatedLogs, total, page, limit })
     } catch (error) {
+        console.error(error);
         res.status(500).json({ error: 'Failed to fetch queue counts' })
     }
 })
@@ -52,27 +131,46 @@ router.post('/:id/resend', verifyAccessToken, async (req: Request, res: Response
         const logId = req.params.id;
         const { newRecipientEmail } = req.body;
 
-        const emailLog = await prisma.emailLog.findUnique({
-            where: { id: logId }
-        });
+        let payload: any = null;
 
-        if (!emailLog) {
-            res.status(404).json({ error: 'Email log not found' });
-            return;
+        if (logId.startsWith('queue-')) {
+            const bullJobId = logId.replace('queue-', '');
+            const job = await emailQueue.getJob(bullJobId);
+            
+            if (!job) {
+                res.status(404).json({ error: 'Queue job not found or has expired' });
+                return;
+            }
+            payload = job.data;
+        } else {
+            const emailLog = await prisma.emailLog.findUnique({
+                where: { id: logId }
+            });
+
+            if (!emailLog) {
+                res.status(404).json({ error: 'Email log not found' });
+                return;
+            }
+
+            if (!emailLog.payload) {
+                res.status(400).json({ error: 'Cannot resend this email because its payload was not stored' });
+                return;
+            }
+
+            payload = typeof emailLog.payload === 'string' ? JSON.parse(emailLog.payload) : emailLog.payload;
         }
-
-        if (!emailLog.payload) {
-            res.status(400).json({ error: 'Cannot resend this email because its payload was not stored' });
-            return;
-        }
-
-        const payload: any = typeof emailLog.payload === 'string' ? JSON.parse(emailLog.payload) : emailLog.payload;
 
         if (newRecipientEmail) {
             payload.to = newRecipientEmail;
         }
 
-        payload.resendParentId = logId;
+        if (!logId.startsWith('queue-')) {
+            payload.resendParentId = logId;
+        } else {
+            // It's a queue job resend, so it doesn't have a DB parent record.
+            // We ensure it's removed so it doesn't violate foreign key constraint.
+            delete payload.resendParentId;
+        }
 
         await emailQueue.add('sendEmail', payload);
 

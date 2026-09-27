@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ClipboardListIcon, MapIcon, UsersIcon, HandHeartIcon, ImagePlayIcon, FlagIcon, SettingsIcon, InfoIcon, TicketIcon, DollarSignIcon, ShieldIcon, MailIcon } from 'lucide-vue-next'
+import { ClipboardListIcon, MapIcon, UsersIcon, HandHeartIcon, ImagePlayIcon, FlagIcon, SettingsIcon, InfoIcon, TicketIcon, DollarSignIcon, ShieldIcon, MailIcon, BellIcon } from 'lucide-vue-next'
 
 const route = useRoute()
 const eventId = computed(() => route.params.id)
@@ -64,6 +64,11 @@ const eventId = computed(() => route.params.id)
             class="bg-white p-3 rounded-lg border border-gray-100 shadow-sm hover:shadow hover:border-primary transition-all flex items-center gap-3">
             <ShieldIcon class="w-5 h-5 text-gray-500" />
             <span class="font-medium text-gray-700">Legal & Policies</span>
+        </NuxtLink>
+        <NuxtLink :to="`/dashboard/events/${eventId}/updates`" active-class="bg-primary/5 text-primary border-primary"
+            class="bg-white p-3 rounded-lg border border-gray-100 shadow-sm hover:shadow hover:border-primary transition-all flex items-center gap-3">
+            <BellIcon class="w-5 h-5 text-gray-500" />
+            <span class="font-medium text-gray-700">Updates</span>
         </NuxtLink>
         <NuxtLink :to="`/dashboard/events/${eventId}/settings`" active-class="bg-primary/5 text-primary border-primary"
             class="bg-white p-3 rounded-lg border border-gray-100 shadow-sm hover:shadow hover:border-primary transition-all flex items-center gap-3">

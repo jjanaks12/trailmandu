@@ -423,6 +423,7 @@ model Stage {
   runner_attendances RunnerAttendance[]
   pricing_tiers      PricingTier[]
   addons             EventAddon[]       @relation("AddonStages")
+  race_updates       RaceUpdate[]
 
   @@map("stages")
 }
@@ -484,17 +485,18 @@ model TrailRace {
   map_file_id String?
   map_file    Image?  @relation("map_image", fields: [map_file_id], references: [id], onDelete: SetNull)
 
-  stages        Stage[]
-  season_passes SeasonPass[]
-  runners       EventRunner[]
+  stages         Stage[]
+  season_passes  SeasonPass[]
+  runners        EventRunner[]
   email_template EventEmailTemplate?
-  gallery_id    String?
-  gallery       Gallery?      @relation(fields: [gallery_id], references: [id])
-  partners      Partner[]
-  sponsors      Sponsor[]
-  tags          Tag[]
-  pricing_tiers PricingTier[]
-  addons        EventAddon[]
+  gallery_id     String?
+  gallery        Gallery?            @relation(fields: [gallery_id], references: [id])
+  partners       Partner[]
+  sponsors       Sponsor[]
+  tags           Tag[]
+  pricing_tiers  PricingTier[]
+  addons         EventAddon[]
+  race_updates   RaceUpdate[]
 
   @@map("events")
 }
@@ -775,17 +777,17 @@ model Trek {
 }
 
 model EventEmailTemplate {
-  id          String    @id @default(cuid())
-  subject     String
-  htmlContent String    @db.LongText
-  variableMap    Json      @default("{}")
-  attachStageGpx Boolean   @default(false)
-  
-  event_id    String    @unique
-  event       TrailRace @relation(fields: [event_id], references: [id], onDelete: Cascade)
-  
-  created_at  DateTime  @default(now())
-  updated_at  DateTime  @updatedAt
+  id             String  @id @default(cuid())
+  subject        String
+  htmlContent    String  @db.LongText
+  variableMap    Json    @default("{}")
+  attachStageGpx Boolean @default(false)
+
+  event_id String    @unique
+  event    TrailRace @relation(fields: [event_id], references: [id], onDelete: Cascade)
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
 
   @@map("event_email_templates")
 }
@@ -1253,16 +1255,36 @@ model BlogComment {
 }
 
 model EmailLog {
-  id         String   @id @default(cuid())
+  id         String     @id @default(cuid())
   recipient  String
   subject    String?
-  status     String   // "SUCCESS", "FAILED"
-  error      String?  @db.Text
+  status     String // "SUCCESS", "FAILED"
+  error      String?    @db.Text
   payload    Json?
   parentId   String?
   parent     EmailLog?  @relation("ResendHistory", fields: [parentId], references: [id])
   children   EmailLog[] @relation("ResendHistory")
-  created_at DateTime @default(now())
+  created_at DateTime   @default(now())
 
   @@map("email_logs")
+}
+
+model RaceUpdate {
+  id         String    @id @default(cuid())
+  message    String    @db.Text
+  created_at DateTime  @default(now())
+  updated_at DateTime?
+  deleted_at DateTime?
+
+  stage_id String?
+  stage    Stage?  @relation(fields: [stage_id], references: [id], onDelete: Cascade)
+
+  event_id String?
+  event    TrailRace? @relation(fields: [event_id], references: [id], onDelete: Cascade)
+
+  parent_id String?
+  parent    RaceUpdate?  @relation("RaceUpdateToRaceUpdate", fields: [parent_id], references: [id], onDelete: Cascade)
+  replies   RaceUpdate[] @relation("RaceUpdateToRaceUpdate")
+
+  @@map("race_updates")
 }

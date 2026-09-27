@@ -4,7 +4,7 @@ import type { EventRunner, Stage, StageCategory, VolunteerCheckpoint } from '~/l
 import { useAxios } from '~/services/axios'
 import { useAppStore } from '~/store/app'
 
-import KVRLogo from '~/assets/images/kvr-summit-logo.png'
+// import KVRLogo from '~/assets/images/kvr-summit-logo.png'
 import trailmanduLogo from '~/assets/images/logo.png'
 import { LoaderIcon, XIcon, ArrowLeftIcon, DownloadIcon } from 'lucide-vue-next'
 import { getDuration, sortRunner } from '~/lib/filters/runner'
@@ -189,9 +189,9 @@ onMounted(fetchRunnerResult)
             <div class="container space-y-3">
                 <h1 class="text-4xl uppercase font-bold text-center" v-if="stage?.event">{{ stage.event.name }}</h1>
                 <h1 class="text-4xl uppercase font-bold text-center" v-else>{{ stage?.name }}</h1>
-                <div class="logo w-[280px] mx-auto">
+                <!-- <div class="logo w-[280px] mx-auto">
                     <img :src="KVRLogo" alt="Kathmandu's ultimate five summit challenge">
-                </div>
+                </div> -->
                 <div class="flex items-center justify-center gap-4 mb-4">
                     <LoaderIcon class="animate-spin" v-show="isLoading" />
                     <Input v-model="searchText" placeholder="Search" />

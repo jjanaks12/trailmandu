@@ -24,6 +24,17 @@ interface EmailLog {
     parentId?: string | null
 }
 
+import moment from 'moment'
+
+const page = ref(1)
+const limit = ref(20)
+const total = ref(0)
+const statusFilter = ref<string>('failed')
+
+const dateFilter = ref('all')
+const startDate = ref('')
+const endDate = ref('')
+
 const counts = ref<{
     waiting: number
     active: number
@@ -45,14 +56,61 @@ const logs = ref<EmailLog[]>([])
 const fetchCountsAndLogs = async () => {
     isLoading.value = true
     try {
-        const { data } = await axios.get('/queues')
+        const { data } = await axios.get('/queues', {
+            params: {
+                page: page.value,
+                limit: limit.value,
+                status: statusFilter.value,
+                startDate: startDate.value || undefined,
+                endDate: endDate.value || undefined
+            }
+        })
         counts.value = data.email
         logs.value = data.logs
+        total.value = data.total
     } catch (e) {
         console.error('Failed to fetch queues', e)
     } finally {
         isLoading.value = false
     }
+}
+
+const applyDateFilter = () => {
+    switch (dateFilter.value) {
+        case 'today':
+            startDate.value = moment().startOf('day').toISOString();
+            endDate.value = moment().endOf('day').toISOString();
+            break;
+        case 'this_week':
+            startDate.value = moment().startOf('week').toISOString();
+            endDate.value = moment().endOf('week').toISOString();
+            break;
+        case 'this_month':
+            startDate.value = moment().startOf('month').toISOString();
+            endDate.value = moment().endOf('month').toISOString();
+            break;
+        case 'this_year':
+            startDate.value = moment().startOf('year').toISOString();
+            endDate.value = moment().endOf('year').toISOString();
+            break;
+        case 'all':
+            startDate.value = '';
+            endDate.value = '';
+            break;
+        case 'custom':
+            // user picks from the date inputs directly
+            break;
+    }
+    if (dateFilter.value !== 'custom') {
+        page.value = 1;
+        fetchCountsAndLogs();
+    }
+}
+
+const handleTabChange = (status: string | number) => {
+    statusFilter.value = String(status)
+    page.value = 1
+    fetchCountsAndLogs()
 }
 
 const formatDate = (dateStr: string) => {
@@ -111,67 +169,62 @@ onMounted(() => {
                 <p class="text-muted-foreground mt-1 text-sm">Real-time statistics for background email processing and
                     recent logs.</p>
             </div>
-            <Button outliine="outline" size="sm" @click="fetchCountsAndLogs" :disabled="isLoading">
-                <RefreshCcwIcon class="w-4 h-4 mr-2" :class="{ 'animate-spin': isLoading }" />
-                Refresh
-            </Button>
+            <div class="flex flex-col sm:flex-row items-center gap-4">
+                <Select v-model="dateFilter" @update:modelValue="applyDateFilter">
+                    <SelectTrigger class="w-[180px]">
+                        <SelectValue placeholder="Date Filter" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">All Time</SelectItem>
+                        <SelectItem value="today">Today</SelectItem>
+                        <SelectItem value="this_week">This Week</SelectItem>
+                        <SelectItem value="this_month">This Month</SelectItem>
+                        <SelectItem value="this_year">This Year</SelectItem>
+                        <SelectItem value="custom">Custom Date</SelectItem>
+                    </SelectContent>
+                </Select>
+
+                <div v-if="dateFilter === 'custom'" class="flex gap-2">
+                    <Input type="date" v-model="startDate" />
+                    <Input type="date" v-model="endDate" />
+                    <Button @click="page = 1; fetchCountsAndLogs()">Apply</Button>
+                </div>
+
+                <Button modifier="outline" size="sm" @click="fetchCountsAndLogs" :disabled="isLoading">
+                    <RefreshCcwIcon class="w-4 h-4 mr-2" :class="{ 'animate-spin': isLoading }" />
+                    Refresh
+                </Button>
+            </div>
         </div>
 
-        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4" v-if="!isLoading">
-            <Card>
-                <CardHeader class="pb-2">
-                    <CardTitle class="text-sm font-medium text-muted-foreground">Waiting</CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <div class="text-2xl font-bold">{{ counts.waiting }}</div>
-                </CardContent>
-            </Card>
-
-            <Card>
-                <CardHeader class="pb-2">
-                    <CardTitle class="text-sm font-medium text-muted-foreground">Active</CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <div class="text-2xl font-bold text-blue-600">{{ counts.active }}</div>
-                </CardContent>
-            </Card>
-
-            <Card>
-                <CardHeader class="pb-2">
-                    <CardTitle class="text-sm font-medium text-muted-foreground">Completed</CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <div class="text-2xl font-bold text-green-600">{{ counts.completed }}</div>
-                </CardContent>
-            </Card>
-
-            <Card>
-                <CardHeader class="pb-2">
-                    <CardTitle class="text-sm font-medium text-muted-foreground">Failed</CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <div class="text-2xl font-bold text-red-600">{{ counts.failed }}</div>
-                </CardContent>
-            </Card>
-
-            <Card>
-                <CardHeader class="pb-2">
-                    <CardTitle class="text-sm font-medium text-muted-foreground">Delayed</CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <div class="text-2xl font-bold text-orange-500">{{ counts.delayed }}</div>
-                </CardContent>
-            </Card>
-
-            <Card>
-                <CardHeader class="pb-2">
-                    <CardTitle class="text-sm font-medium text-muted-foreground">Paused</CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <div class="text-2xl font-bold">{{ counts.paused }}</div>
-                </CardContent>
-            </Card>
-        </div>
+        <Tabs :model-value="statusFilter" @update:model-value="handleTabChange" class="w-full" v-if="!isLoading">
+            <TabsList class="w-full grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 h-auto p-1 gap-2">
+                <TabsTrigger value="failed" class="py-3 flex flex-col items-center justify-center gap-1">
+                    <span class="text-sm font-medium text-muted-foreground">Failed</span>
+                    <span class="text-2xl font-bold text-red-600">{{ counts.failed }}</span>
+                </TabsTrigger>
+                <TabsTrigger value="waiting" class="py-3 flex flex-col items-center justify-center gap-1">
+                    <span class="text-sm font-medium text-muted-foreground">Waiting</span>
+                    <span class="text-2xl font-bold">{{ counts.waiting }}</span>
+                </TabsTrigger>
+                <TabsTrigger value="active" class="py-3 flex flex-col items-center justify-center gap-1">
+                    <span class="text-sm font-medium text-muted-foreground">Active</span>
+                    <span class="text-2xl font-bold text-blue-600">{{ counts.active }}</span>
+                </TabsTrigger>
+                <TabsTrigger value="completed" class="py-3 flex flex-col items-center justify-center gap-1">
+                    <span class="text-sm font-medium text-muted-foreground">Completed</span>
+                    <span class="text-2xl font-bold text-green-600">{{ counts.completed }}</span>
+                </TabsTrigger>
+                <TabsTrigger value="delayed" class="py-3 flex flex-col items-center justify-center gap-1">
+                    <span class="text-sm font-medium text-muted-foreground">Delayed</span>
+                    <span class="text-2xl font-bold text-orange-500">{{ counts.delayed }}</span>
+                </TabsTrigger>
+                <TabsTrigger value="paused" class="py-3 flex flex-col items-center justify-center gap-1">
+                    <span class="text-sm font-medium text-muted-foreground">Paused</span>
+                    <span class="text-2xl font-bold">{{ counts.paused }}</span>
+                </TabsTrigger>
+            </TabsList>
+        </Tabs>
 
         <div class="flex justify-center p-12" v-else-if="isLoading && !logs.length">
             <LoaderIcon class="w-8 h-8 animate-spin text-muted-foreground" />
@@ -222,6 +275,25 @@ onMounted(() => {
                         </TableRow>
                     </TableBody>
                 </Table>
+            </div>
+
+            <div class="flex items-center justify-between mt-4" v-if="logs.length > 0">
+                <div class="text-sm text-muted-foreground">
+                    Showing {{ (page - 1) * limit + 1 }} to {{ Math.min(page * limit, total) }} of {{ total }} entries
+                </div>
+                <div class="flex space-x-1">
+                    <Button modifier="outline" size="sm" :disabled="page <= 1"
+                        @click="page--; fetchCountsAndLogs()">Prev</Button>
+                    <template v-for="p in Math.ceil(total / limit)" :key="p">
+                        <Button v-if="p === 1 || p === Math.ceil(total / limit) || Math.abs(page - p) <= 2" size="sm"
+                            :modifier="page === p ? 'default' : 'outline'" @click="page = p; fetchCountsAndLogs()">
+                            {{ p }}
+                        </Button>
+                        <span v-else-if="Math.abs(page - p) === 3" class="px-2 mt-1 text-muted-foreground">...</span>
+                    </template>
+                    <Button modifier="outline" size="sm" :disabled="page * limit >= total"
+                        @click="page++; fetchCountsAndLogs()">Next</Button>
+                </div>
             </div>
         </div>
 
