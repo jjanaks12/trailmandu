@@ -35,7 +35,7 @@ const isFinished = computed(() => moment().isAfter(moment(trailRace.value?.end a
 const isUpcoming = computed(() => moment().isBefore(moment(trailRace.value?.start as string)))
 
 const isSelectedStageUpcoming = computed(() => {
-    if (!selectedStage.value) return false;
+    if (!selectedStage.value) return isUpcoming.value;
     return selectedStage.value.stage_categories.some(cat => moment(cat.end as string).isAfter(moment()));
 })
 
@@ -80,7 +80,10 @@ const totalElevationGain = computed(() => {
 })
 
 if (trailRace.value && trailRace.value.stages.length > 0) {
-    let initialStage = trailRace.value.stages[0]
+    const nextUpcoming = trailRace.value.stages.find(stage =>
+        stage.stage_categories.some(cat => moment(cat.end as string).isAfter(moment()))
+    )
+    let initialStage = nextUpcoming ?? trailRace.value.stages[0]
     if (route.query.stage_id) {
         const foundStage = trailRace.value.stages.find(s => s.id === route.query.stage_id)
         if (foundStage) initialStage = foundStage
@@ -270,7 +273,7 @@ const isSticky = computed(() => y.value > 450)
                         </div>
                     </div>
 
-                    <Button size="sm" as-child v-if="isUpcoming">
+                    <Button size="sm" as-child v-if="isSelectedStageUpcoming">
                         <NuxtLink
                             :to="$localePath({ name: 'races-slug-runner', params: { slug: route.params.slug }, query: { stage_id: selectedStage?.id } })">
                             Register
@@ -741,12 +744,14 @@ const isSticky = computed(() => y.value > 450)
                         <img v-if="sponsor.thumbnail" :src="showImage(sponsor.thumbnail.file_name)" :alt="sponsor.name"
                             class="max-w-full max-h-full object-contain filter dark:invert dark:opacity-70 dark:group-hover:opacity-100 grayscale opacity-80 group-hover:grayscale-0 group-hover:opacity-100 transition-all duration-300" />
                         <span v-else
-                            class="text-lg font-bold text-slate-400 group-hover:text-primary transition-colors text-center">{{
-                                sponsor.name }}</span>
+                            class="text-lg font-bold text-slate-400 group-hover:text-primary transition-colors text-center">
+                            {{ sponsor.name }}
+                        </span>
                     </div>
                     <span
-                        class="text-[10px] font-black uppercase tracking-widest text-slate-400 group-hover:text-primary transition-colors">{{
-                            sponsor.sponsorType?.name }}</span>
+                        class="text-[10px] font-black uppercase tracking-widest text-slate-400 group-hover:text-primary transition-colors">
+                        {{ sponsor.sponsorType?.name }}
+                    </span>
                 </a>
             </div>
         </section>
