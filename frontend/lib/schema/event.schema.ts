@@ -61,11 +61,11 @@ export const trailRaceRunner = Y.object({
     /* age_category_id: Y.string().required().label("Age category"), */
     payment_type: Y.string().oneOf(paymentTypes).required().label("Payment type"),
     payment_method: Y.string().oneOf(paymentMethods).required().label("Payment method"),
-    payment_screenshot: Y.string()/*.when('payment_method', {
+    payment_screenshot: Y.string().when('payment_method', {
         is: 'QR',
-        then: schema => schema.required(),
-        otherwise: schema => schema
-    })*/.label("Payment screenshot"),
+        then: schema => schema.required('Payment screenshot is required for QR payment').min(1, 'Payment screenshot is required for QR payment'),
+        otherwise: schema => schema.optional().nullable()
+    }).label("Payment screenshot"),
     description: Y.object({
         club_name: Y.string().label('Club name'),
         emergency_contact_name: Y.string().required().label('Emergency Contact name'),

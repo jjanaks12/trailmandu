@@ -14,6 +14,7 @@ import { prisma } from '@/app/lib/services/prisma.service'
 import { __basedir } from "@/index"
 import { PaymentMethod, PaymentStatus } from "@prisma/client/index-browser"
 import ical, { ICalCalendarMethod } from "ical-generator"
+import { RunnerRegistrationService } from "@/app/lib/services/runner-registration.service"
 
 export class RunnerController {
     public static async index(request: Request, response: Response, next: NextFunction) {
@@ -117,291 +118,12 @@ export class RunnerController {
         try {
             const validationData = await trailRaceRunner.validate(request.body, { abortEarly: false })
             const eventId = request.params.event_id as string
-            const body: any = {}
 
-
-            if (validationData.date_of_birth)
-                body.date_of_birth = moment(validationData.date_of_birth, "YYYY-MM-DD").toISOString()
-
-            const baseCategoryId = validationData.is_season_pass ? validationData.season_pass_categories[0] : validationData.stage_category_id
-
-            const event = await prisma.trailRace.findFirst({
-                where: { id: eventId },
-                include: {
-                    runners: {
-                        where: {
-                            stage_category_id: baseCategoryId
-                        }
-                    }
-                }
-            })
-
-            const stageCategory = await prisma.stageCategory.findFirst({
-                where: { id: baseCategoryId },
-                include: {
-                    stage: {
-                        include: {
-                            event: true
-                        }
-                    }
-                }
-            })
-
-            let personal = await prisma.personal.findFirst({
-                where: { email: validationData.email },
-                include: {
-                    gender: true,
-                    country: true
-                }
-            })
-            if (!personal)
-                personal = await prisma.personal.create({
-                    data: {
-                        ...body,
-                        first_name: validationData.first_name,
-                        middle_name: validationData.middle_name,
-                        last_name: validationData.last_name,
-                        email: validationData.email,
-                        itra_id: validationData.itra_id,
-                        phone_number: validationData.phone_number,
-                        // age_category_id: validationData.age_category_id,
-                        country_id: validationData.country_id,
-                        size_id: validationData.size_id || null,
-                        gender_id: validationData.gender_id
-                    },
-                    include: {
-                        gender: true,
-                        country: true
-                    }
-                })
-            else
-                personal = await prisma.personal.update({
-                    where: { id: personal.id },
-                    data: {
-                        ...body,
-                        first_name: validationData.first_name,
-                        middle_name: validationData.middle_name,
-                        last_name: validationData.last_name,
-                        email: validationData.email,
-                        itra_id: validationData.itra_id,
-                        phone_number: validationData.phone_number,
-                        // age_category_id: validationData.age_category_id,
-                        country_id: validationData.country_id,
-                        size_id: validationData.size_id || null,
-                        gender_id: validationData.gender_id
-                    },
-                    include: {
-                        gender: true,
-                        country: true
-                    }
-                })
-
-            let user = await prisma.user.findFirst({ where: { personal_id: personal.id } })
-            if (!user) {
-                const salt = await Bcrypt.genSalt(10)
-                const hashPassword = await Bcrypt.hash('password', salt)
-
-                let role = await prisma.role.findFirst({ where: { name: 'Runner' } })
-
-                if (role == null)
-                    role = await prisma.role.create({ data: { name: 'Runner' } })
-
-                user = await prisma.user.create({
-                    data: {
-                        personal_id: personal.id,
-                        password: hashPassword,
-                        role_id: role.id
-                    }
-                })
-            }
-
-            let matchedCategories = [stageCategory]
-            if (validationData.is_season_pass) {
-                const stages = await prisma.stage.findMany({
-                    where: { event_id: eventId },
-                    include: { stage_categories: true }
-                })
-
-                matchedCategories = []
-                for (const stage of stages) {
-                    const match = stage.stage_categories.find(c => validationData.season_pass_categories.includes(c.id))
-                    if (match) matchedCategories.push(match as any)
-                }
-            }
-
-            const [min] = stageCategory.bib_range.split('-')
-            const baseBib = (Number(min) + (event.runners.length + 1))
-            const runnerCon = new RunnerController()
-            const categoryIds = matchedCategories.map((c: any) => c.id)
-            const checkedBib = await runnerCon.checkBIB(baseBib, categoryIds)
-            const finalBib = checkedBib.toString().padStart(3, '0')
-
-            let paymentBody: any = {}
-            if (validationData.payment_screenshot) {
-                const fileUpload = new FileHandler('payments')
-                const image = await fileUpload.saveFile(validationData.payment_screenshot)
-                paymentBody.image_id = image.id
-            }
-
-            const createdRunners = []
-            let runner: any = null
-            let payment: any = null
-
-            for (const category of matchedCategories) {
-                const existingRunner = await prisma.eventRunner.findFirst({
-                    where: {
-                        event_id: eventId,
-                        stage_id: category.stage_id,
-                        personal_id: personal.id
-                    }
-                })
-
-                if (existingRunner) {
-                    if (!validationData.is_season_pass) {
-                        throw createHttpError(409, `You have already registered for this event`)
-                    } else {
-                        continue
-                    }
-                }
-
-                runner = await prisma.eventRunner.create({
-                    data: {
-                        bib: finalBib,
-                        event_id: eventId,
-                        personal_id: personal.id,
-                        stage_id: category.stage_id,
-                        stage_category_id: category.id,
-                        want_lunch: validationData.description.want_lunch ?? false,
-                        club_name: validationData.description.club_name,
-                        emergency_contact_name: validationData.description.emergency_contact_name,
-                        emergency_contact_no: validationData.description.emergency_contact_phone,
-                        shirt_id: validationData.size_id || null,
-                        season_pass_id: validationData.is_season_pass ? validationData.season_pass_id : null
-                    }
-                })
-                createdRunners.push(runner)
-
-                let paymentAmount = 0;
-                let shouldCreatePayment = false;
-
-                if (validationData.is_season_pass && validationData.season_pass_id) {
-                    if (createdRunners.length === 1) {
-                        const seasonPassPayment = await prisma.seasonPassPayment.findFirst({
-                            where: {
-                                season_pass_id: validationData.season_pass_id,
-                                type: validationData.payment_type
-                            }
-                        })
-                        if (seasonPassPayment) {
-                            paymentAmount = Number(seasonPassPayment.amount);
-                            shouldCreatePayment = true;
-                        }
-                    } else {
-                        paymentAmount = 0;
-                        shouldCreatePayment = true;
-                    }
-                } else {
-                    const stageCategoryPayment = await prisma.stageCategoryPayment.findFirst({
-                        where: {
-                            stage_category_id: category.id,
-                            type: validationData.payment_type
-                        }
-                    })
-                    if (stageCategoryPayment) {
-                        paymentAmount = Number(stageCategoryPayment.amount);
-                        shouldCreatePayment = true;
-                    }
-                }
-
-                if (shouldCreatePayment) {
-                    payment = await prisma.payment.create({
-                        data: {
-                            ...paymentBody,
-                            amount: paymentAmount,
-                            stage_category_id: category.id,
-                            runner_id: runner.id,
-                            method: validationData.payment_method
-                        }
-                    })
-                }
-            }
-
-            if (createdRunners.length === 0) {
-                throw createHttpError(409, `You have already registered for all stages of this event`)
-            }
-            const start = moment.utc(stageCategory.start).local().format('DD-MM-YYYY hh:mm a')
-            const end = moment.utc(stageCategory.end).local().format('DD-MM-YYYY hh:mm a')
-
-            const calendar = ical({ name: `${stageCategory.stage.name} - ${stageCategory.name}` })
-            calendar.method(ICalCalendarMethod.REQUEST)
-            calendar.createEvent({
-                start: new Date(stageCategory.start),
-                end: new Date(stageCategory.end),
-                summary: stageCategory.excerpt,
-                description: stageCategory.description,
-                location: stageCategory.location,
-                url: `https://trailmandu.com/races/${event.slug}/stage/${stageCategory.stage.id}`
-            })
-
-            await emailQueue.add('sendEmail', {
-                fileName: 'welcome',
-                replacements: {
-                    title: 'Thank you for signing up for race',
-                    user: {
-                        name: [validationData.first_name, validationData.middle_name, validationData.last_name].join(' '),
-                        email: validationData.email,
-                        bib: runner.bib,
-                        country: personal.country.name,
-                        gender: personal.gender.name,
-                        contact_no: personal.phone_number,
-                        dob: moment(personal.date_of_birth).format('DD-MM-YYYY'),
-                        emergency_contact: validationData.description.emergency_contact_name,
-                        emergency_contact_no: validationData.description.emergency_contact_phone,
-                    },
-                    stage: stageCategory.stage,
-                    stageCategory: { ...stageCategory, start, end },
-                    links: {
-                        "Trailmandu": 'https://trailmandu.com',
-                        event: 'https://trailmandu.com'
-                    }
-                },
-                props: {
-                    recipients: [{
-                        email: validationData.email,
-                        name: validationData.first_name,
-                    }],
-                    subject: 'Welcome to Trailmandu'
-                },
-                senderEmail: 'info@trailmandu.com',
-                attachments: [{
-                    content: Buffer.from(calendar.toString()).toString('base64'),
-                    filename: `${stageCategory.stage.name} - ${stageCategory.name}.ics`,
-                    type: "text/calendar; charset=UTF-8; method=REQUEST",
-                    disposition: 'attachment'
-                }],
-                category: 'event'
-            })
+            const payment = await RunnerRegistrationService.register(eventId, validationData)
 
             response.send(payment)
         } catch (error) {
             next(error)
-        }
-    }
-
-    private async checkBIB(bib: number, stage_category_ids: string[]) {
-        let currentBib = bib;
-        while (true) {
-            const bibExists = await prisma.eventRunner.findFirst({
-                where: {
-                    bib: currentBib.toString().padStart(3, '0'),
-                    stage_category_id: { in: stage_category_ids }
-                }
-            });
-            if (bibExists) {
-                currentBib++;
-            } else {
-                return currentBib;
-            }
         }
     }
 
@@ -856,27 +578,64 @@ export class RunnerController {
             const start = moment.utc(stageCategory.start).local().format('DD-MM-YYYY hh:mm a')
             const end = moment.utc(stageCategory.end).local().format('DD-MM-YYYY hh:mm a')
 
-            const calendar = ical({ name: `${stageCategory.stage.name} - ${stageCategory.name}` })
-            calendar.method(ICalCalendarMethod.REQUEST)
-            calendar.createEvent({
-                start: new Date(stageCategory.start),
-                end: new Date(stageCategory.end),
-                summary: stageCategory.excerpt,
-                description: stageCategory.description,
-                location: stageCategory.location,
-                url: `https://trailmandu.com/races/${event.slug}/stage/${stageCategory.stage.id}`
+            const fullName = [personal.first_name, personal.middle_name, personal.last_name]
+                .filter(Boolean)
+                .join(' ')
+
+            const startDate = new Date(stageCategory.start)
+            const endDate = stageCategory.end
+                ? new Date(stageCategory.end)
+                : new Date(startDate.getTime() + 4 * 60 * 60 * 1000)
+
+            const calendar = ical({
+                name: `${event.name || 'Trail Race'} - ${stageCategory.stage.name} (${stageCategory.name})`,
+                prodId: '//Trailmandu//Trail Race Calendar//EN'
             })
+            calendar.method(ICalCalendarMethod.REQUEST)
+
+            const cleanDescription = [
+                stageCategory.excerpt,
+                runner?.bib ? `Bib: ${runner.bib}` : '',
+                stageCategory.distance ? `Distance: ${Number(stageCategory.distance) / 1000} km` : '',
+                stageCategory.elevation ? `Elevation Gain: ${stageCategory.elevation} m` : '',
+                stageCategory.location ? `Location: ${stageCategory.location}` : '',
+                `Race Page: https://trailmandu.com/races/${event.slug}/stage/${stageCategory.stage.id}`
+            ].filter(Boolean).join('\n')
+
+            calendar.createEvent({
+                id: `runner-${runner.id}-${stageCategory.id}@trailmandu.com`,
+                start: startDate,
+                end: endDate,
+                summary: `${event.name || 'Trail Race'} - ${stageCategory.stage.name} (${stageCategory.name})`,
+                description: cleanDescription,
+                location: stageCategory.location || stageCategory.stage?.location || 'Kathmandu, Nepal',
+                url: `https://trailmandu.com/races/${event.slug}/stage/${stageCategory.stage.id}`,
+                organizer: {
+                    name: 'Trailmandu',
+                    email: 'info@trailmandu.com'
+                },
+                attendees: [
+                    {
+                        name: fullName,
+                        email: personal.email,
+                        rsvp: true
+                    }
+                ]
+            })
+
+            const calendarContent = calendar.toString()
+            const icsFilename = `${stageCategory.stage.name} - ${stageCategory.name}.ics`
 
             await emailQueue.add('sendEmail', {
                 fileName: 'welcome',
                 replacements: {
                     title: 'Thank you for signing up for race',
                     user: {
-                        name: [personal.first_name, personal.middle_name, personal.last_name].join(' '),
+                        name: fullName,
                         email: personal.email,
                         bib: runner.bib,
-                        country: personal.country.name,
-                        gender: personal.gender.name,
+                        country: personal.country?.name,
+                        gender: personal.gender?.name,
                         contact_no: personal.phone_number,
                         dob: moment(personal.date_of_birth).format('DD-MM-YYYY'),
                         emergency_contact: runner.emergency_contact_name,
@@ -898,11 +657,15 @@ export class RunnerController {
                 },
                 senderEmail: 'info@trailmandu.com',
                 attachments: [{
-                    content: Buffer.from(calendar.toString()).toString('base64'),
-                    filename: `${stageCategory.stage.name} - ${stageCategory.name}.ics`,
-                    type: "text/calendar; charset=UTF-8; method=REQUEST",
-                    disposition: 'attachment'
+                    content: calendarContent,
+                    filename: icsFilename,
+                    contentType: "text/calendar; charset=UTF-8; method=REQUEST"
                 }],
+                icalEvent: {
+                    filename: icsFilename,
+                    method: 'REQUEST',
+                    content: calendarContent
+                },
                 category: 'event'
             })
 

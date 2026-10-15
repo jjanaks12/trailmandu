@@ -58,7 +58,8 @@ export const emailWorker = new Worker('emailQueue', async (job: Job) => {
             subject: finalSubject,
             text: text || 'Please view this email in an HTML compatible client.',
             html: finalHtml,
-            attachments: attachments || []
+            attachments: attachments || [],
+            icalEvent: job.data.icalEvent
         });
 
         // Save log to DB

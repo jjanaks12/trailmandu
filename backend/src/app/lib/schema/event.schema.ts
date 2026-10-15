@@ -68,8 +68,8 @@ export const trailRaceRunner = Y.object({
     payment_method: Y.string().oneOf(Object.values(PaymentMethod)).required().label("Payment method"),
     payment_screenshot: Y.string().when('payment_method', {
         is: 'QR',
-        then: schema => schema.required(),
-        otherwise: schema => schema
+        then: schema => schema.required('Payment screenshot is required for QR payment').min(1, 'Payment screenshot is required for QR payment'),
+        otherwise: schema => schema.optional().nullable()
     }).label("Payment screenshot"),
     description: Y.object({
         club_name: Y.string().label('Club name'),

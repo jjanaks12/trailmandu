@@ -5,6 +5,7 @@ import { parseDate } from "@internationalized/date"
 import { storeToRefs } from "pinia"
 import type { SubmissionHandler } from "vee-validate"
 import { User, Mail, Phone, Calendar, Users, Flag, Target, Loader2, XIcon, InfoIcon, LoaderIcon, ShirtIcon, MountainIcon, ArrowLeft } from "lucide-vue-next"
+import { toast } from "vue-sonner"
 import * as Y from 'yup'
 
 import DatePicker from "@/components/DatePicker.vue"
@@ -147,9 +148,11 @@ watch(selectedTierId, (newId) => {
 })
 
 watch(() => form.value?.values.country_id, (newCountryId) => {
-    if (form.value) {
-        const type = newCountryId == company.value?.address.country_id ? 'NATIONAL' : 'INTERNATIONAL'
+    if (form.value && newCountryId) {
+        const isNational = newCountryId == company.value?.address?.country_id
+        const type = isNational ? 'NATIONAL' : 'INTERNATIONAL'
         form.value.setFieldValue('payment_type', type)
+        form.value.setFieldValue('payment_method', isNational ? 'QR' : 'PAY_AT_VENUE')
     }
 })
 
@@ -227,6 +230,8 @@ const payment = computed(() => {
     } as unknown as StageCategoryPayment
 })
 
+const fileInput = ref<HTMLInputElement | null>(null)
+
 const onSubmit: SubmissionHandler = async (values: any) => {
     try {
         isLoading.value = true
@@ -240,8 +245,13 @@ const onSubmit: SubmissionHandler = async (values: any) => {
             }
             showThankyouDialog.value = await saveRunner(payload, props.trailRace.id)
         }
-    } catch (error) {
-        console.log(error)
+    } catch (error: any) {
+        const errorMsg = error.response?.data?.error?.errors?.[0]
+            || error.response?.data?.error?.message
+            || error.response?.data?.message
+            || 'Registration failed. Please review your information and try again.'
+        toast.error(errorMsg)
+        console.error("Runner registration error:", error)
     } finally {
         isLoading.value = false
     }
@@ -251,16 +261,30 @@ const handleFileChange = (event: Event) => {
     const target = event.target as HTMLInputElement
     const file = target.files?.[0]
     if (file) {
+        if (file.size > 2 * 1024 * 1024) {
+            toast.error("Screenshot file size should be less than 2MB")
+            if (fileInput.value) fileInput.value.value = ''
+            return
+        }
         const reader = new FileReader()
         reader.onload = (e) => {
             const result = e.target?.result
             if (result) {
                 form.value?.setFieldValue('payment_method', 'QR')
                 form.value?.setFieldValue('payment_screenshot', result)
+                form.value?.validateField('payment_screenshot')
             }
         }
         reader.readAsDataURL(file)
     }
+}
+
+const removeScreenshot = () => {
+    if (fileInput.value) {
+        fileInput.value.value = ''
+    }
+    form.value?.setFieldValue('payment_screenshot', '')
+    form.value?.validateField('payment_screenshot')
 }
 
 const checkEmail = async (email: string) => {
@@ -484,8 +508,9 @@ onMounted(() => {
                                     </Label>
                                     <Select :model-value="String(value ?? '')" @update:model-value="(e) => {
                                         handleChange(e)
-                                        const isInternational = e == company?.address.country_id
-                                        setFieldValue('payment_method', isInternational ? 'PAY_AT_VENUE' : 'QR')
+                                        const isNational = e == company?.address?.country_id
+                                        setFieldValue('payment_type', isNational ? 'NATIONAL' : 'INTERNATIONAL')
+                                        setFieldValue('payment_method', isNational ? 'QR' : 'PAY_AT_VENUE')
                                     }">
                                         <SelectTrigger class="w-full h-12">
                                             <SelectValue placeholder="Select country" />
@@ -793,19 +818,19 @@ onMounted(() => {
                                     </div>
                                 </div>
                                 <label
-                                    class="flex items-center gap-2 rounded-lg overflow-hidden border border-gray-200 relative"
+                                    class="flex items-center gap-2 rounded-lg overflow-hidden border border-gray-200 relative cursor-pointer"
                                     :class="{
-                                        'border-red-500 text-red-500': form?.errors?.payment_method,
-                                        'border-green-500 text-green-500': !form?.errors?.payment_method
+                                        'border-red-500 text-red-500': form?.errors?.payment_screenshot || form?.errors?.payment_method,
+                                        'border-green-500 text-green-500': !form?.errors?.payment_screenshot && !form?.errors?.payment_method && values?.payment_screenshot
                                     }">
-                                    <input type="file" @change="handleFileChange" class="hidden"
+                                    <input ref="fileInput" type="file" @change="handleFileChange" class="hidden"
                                         accept=".jpg,.jpeg,.png" />
-                                    <figure v-if="values?.payment_screenshot">
+                                    <figure v-if="values?.payment_screenshot" class="w-full relative">
                                         <img :src="values?.payment_screenshot" alt="Payment screenshot"
                                             class="max-w-full h-auto p-2" />
-                                        <Button type="button" class="absolute top-2 right-2"
-                                            @click="form?.setFieldValue('payment_screenshot', '')">
-                                            <XIcon class="w-6 h-6" />
+                                        <Button type="button" variant="destructive" size="icon" class="absolute top-2 right-2 h-8 w-8 rounded-full"
+                                            @click.stop.prevent="removeScreenshot">
+                                            <XIcon class="w-4 h-4" />
                                         </Button>
                                     </figure>
                                     <div class="w-full flex flex-col gap-2 p-4" v-else>
@@ -815,7 +840,8 @@ onMounted(() => {
                                 </label>
                             </div>
                         </div>
-                        <ErrorMessage class="error__message" name="payment_method" />
+                        <ErrorMessage class="error__message text-red-500 text-sm mt-1" name="payment_screenshot" />
+                        <ErrorMessage class="error__message text-red-500 text-sm mt-1" name="payment_method" />
                     </div>
 
                     <div class="bg-white rounded-3xl border border-gray-200 shadow-sm p-8">
