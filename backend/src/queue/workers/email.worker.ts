@@ -1,6 +1,9 @@
 import { Worker, Job } from 'bullmq';
 import IORedis from 'ioredis';
 import nodemailer from 'nodemailer';
+import fs from 'fs';
+import path from 'path';
+import Handlebars from 'handlebars';
 import { prisma } from '@/app/lib/services/prisma.service';
 
 
@@ -40,6 +43,31 @@ export const emailWorker = new Worker('emailQueue', async (job: Job) => {
 
         finalSubject = subject || (props && props.subject) || (replacements && replacements.title) || 'No Subject';
         let finalHtml = html;
+
+        // If fileName is provided, attempt to render the Handlebars template
+        if (!finalHtml && fileName) {
+            const possiblePaths = [
+                path.resolve(process.cwd(), 'src/resources/views/email', `${fileName}.html`),
+                path.resolve(process.cwd(), 'dist/resources/views/email', `${fileName}.html`),
+                path.resolve(__dirname, '../../resources/views/email', `${fileName}.html`),
+                path.resolve(__dirname, '../../../resources/views/email', `${fileName}.html`),
+                path.resolve(process.cwd(), '../services/notification/src/resources/views/email', `${fileName}.html`),
+                path.resolve(__dirname, '../../../../services/notification/src/resources/views/email', `${fileName}.html`)
+            ];
+
+            const templatePath = possiblePaths.find(p => fs.existsSync(p));
+            if (templatePath) {
+                try {
+                    const source = fs.readFileSync(templatePath, 'utf-8');
+                    const template = Handlebars.compile(source);
+                    finalHtml = template(replacements || {});
+                } catch (templateErr) {
+                    console.error(`[emailWorker] Error compiling template ${fileName}:`, templateErr);
+                }
+            } else {
+                console.warn(`[emailWorker] Template file "${fileName}.html" not found in search paths`);
+            }
+        }
 
         // If there's no HTML but there are replacements, generate a basic HTML dump
         if (!finalHtml && replacements) {

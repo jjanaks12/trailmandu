@@ -371,7 +371,7 @@ export class RunnerRegistrationService {
                     emergency_contact: validationData.description?.emergency_contact_name,
                     emergency_contact_no: validationData.description?.emergency_contact_phone
                 },
-                stage: stageCategory.stage,
+                stage: { ...stageCategory.stage, event },
                 stageCategory: { ...stageCategory, start, end },
                 links: {
                     Trailmandu: "https://trailmandu.com",

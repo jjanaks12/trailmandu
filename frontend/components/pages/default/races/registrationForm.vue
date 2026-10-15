@@ -41,6 +41,24 @@ const formStageId = computed(() => form.value?.values?.stage_id || null)
 const formStageCategoryId = computed(() => form.value?.values?.stage_category_id || null)
 const formIsSeasonPass = computed(() => !!form.value?.values?.is_season_pass)
 
+// getting list of available stages
+const upcomingStages = computed(() => props.trailRace.stages
+    .map(stage => stage.stage_categories
+        .filter(stage_category => moment(stage_category.end as string).isAfter(moment())).length > 0 ? stage : null)
+    .filter(stage => stage !== null))
+
+const stageList = computed(() => {
+    if (!upcomingStages.value.length) return []
+    return form.value?.values?.is_season_pass ? upcomingStages.value : [upcomingStages.value[0]]
+})
+// getting stage categories of selected stage
+const availabeStageCategoryList = computed(() => {
+    if (form.value?.values.is_season_pass) {
+        return stageList.value[0]?.stage_categories
+    }
+    return stageList.value.find(stage => stage.id === form.value?.values.stage_id)?.stage_categories
+})
+
 const currentSelectedStage = computed(() => {
     const stageId = formStageId.value || (route.query.stage_id as string)
     if (stageId) {
@@ -70,24 +88,6 @@ watch(shouldShowShirtSize, (show) => {
     if (!show && form.value) {
         form.value.setFieldValue('size_id', undefined)
     }
-})
-
-// getting list of available stages
-const upcomingStages = computed(() => props.trailRace.stages
-    .map(stage => stage.stage_categories
-        .filter(stage_category => moment(stage_category.end as string).isAfter(moment())).length > 0 ? stage : null)
-    .filter(stage => stage !== null))
-
-const stageList = computed(() => {
-    if (!upcomingStages.value.length) return []
-    return form.value?.values?.is_season_pass ? upcomingStages.value : [upcomingStages.value[0]]
-})
-// getting stage categories of selected stage
-const availabeStageCategoryList = computed(() => {
-    if (form.value?.values.is_season_pass) {
-        return stageList.value[0]?.stage_categories
-    }
-    return stageList.value.find(stage => stage.id === form.value?.values.stage_id)?.stage_categories
 })
 const selectedAddons = ref<string[]>([])
 
@@ -174,7 +174,6 @@ const applicableAddons = computed(() => {
 })
 
 const addonsTotal = computed(() => {
-    console.log(applicableAddons.value)
     return applicableAddons.value.reduce((total, addon) => {
         if (addon.is_mandatory || selectedAddons.value.includes(addon.id)) {
             return total + Number(addon.price)
@@ -500,7 +499,8 @@ onMounted(() => {
                             </div>
 
                             <!-- Demographics -->
-                            <div class="grid grid-cols-1 gap-6" :class="shouldShowShirtSize ? 'md:grid-cols-3' : 'md:grid-cols-2'">
+                            <div class="grid grid-cols-1 gap-6"
+                                :class="shouldShowShirtSize ? 'md:grid-cols-3' : 'md:grid-cols-2'">
                                 <Field name="country_id" as="div" v-slot="{ value, handleChange }" class="space-y-2">
                                     <Label class="text-sm font-medium text-gray-700 flex items-center gap-2">
                                         <Flag :size="16" class="text-gray-400" />
@@ -716,14 +716,14 @@ onMounted(() => {
                                                     @update:model-value="(checked) => toggleAddon(addon.id, checked === true)" />
                                                 <div>
                                                     <span class="block font-medium text-sm text-gray-900">{{ addon.name
-                                                    }}</span>
+                                                        }}</span>
                                                     <span
                                                         class="text-[10px] text-primary uppercase font-bold tracking-wider"
                                                         v-if="addon.is_mandatory">Mandatory</span>
                                                 </div>
                                             </div>
                                             <span class="text-sm font-semibold text-gray-900">Rs. {{ addon.price
-                                            }}</span>
+                                                }}</span>
                                         </label>
                                     </div>
                                 </div>
@@ -828,7 +828,8 @@ onMounted(() => {
                                     <figure v-if="values?.payment_screenshot" class="w-full relative">
                                         <img :src="values?.payment_screenshot" alt="Payment screenshot"
                                             class="max-w-full h-auto p-2" />
-                                        <Button type="button" variant="destructive" size="icon" class="absolute top-2 right-2 h-8 w-8 rounded-full"
+                                        <Button type="button" variant="destructive" size="icon"
+                                            class="absolute top-2 right-2 h-8 w-8 rounded-full"
                                             @click.stop.prevent="removeScreenshot">
                                             <XIcon class="w-4 h-4" />
                                         </Button>

@@ -76,8 +76,15 @@ services:
       - ./services/notification/.env
     environment:
       - DATABASE_URL=mysql://root:cloud@mysql:3306/trailmandu_notifications?connection_limit=10&pool_timeout=20&allowPublicKeyRetrieval=true&useSSL=false
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_USER=root
+      - DB_PASSWORD=cloud
+      - DB_NAME=trailmandu_notifications
       - REDIS_URL=redis://redis:6379
     depends_on:
+      mysql:
+        condition: service_healthy
       redis:
         condition: service_started
 

@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap"
+        rel="stylesheet">
+    <title>{{ title }}</title>
+</head>
+<body style="background-color: #f0f0f0; font: 300 14px/1.2 'Open Sans', sans-serif;">
+    <table style="width: 500px; margin: 0 auto;">
+        <thead>
+            <tr>
+                <th colspan="2">
+                    <h1>Welcome to Trailmandu, <br />{{user.name}}.</h1>
+                </th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td colspan="2" style="text-align: center;">
+                    <p style="display: block; margin-bottom: 30px;">
+                        Congratulation, you have now
+                        <strong style="font-weight: 900;">registered</strong>
+                        for {{ stage.event.name }}, {{ stage.name }}.
+                    </p>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2" style="text-align: center; font-weight: 700; font-size: 18px;">General information</td>
+            </tr>
+            <tr>
+                <td colspan="2" style="background: #fff; padding: 10px; border-radius: 5px;">
+                    <table>
+                        <tbody>
+                            <tr>
+                                <td style="width: 100px; font-weight: 500; vertical-align: top;">Name:</td>
+                                <td>{{ user.name }}</td>
+                            </tr>
+                            <tr>
+                                <td style="width: 100px; font-weight: 500; vertical-align: top;">Email:</td>
+                                <td>{{ user.email }}</td>
+                            </tr>
+                            <tr>
+                                <td style="width: 100px; font-weight: 500; vertical-align: top;">Phone:</td>
+                                <td>{{ user.contact_no }}</td>
+                            </tr>
+                            <tr>
+                                <td style="width: 100px; font-weight: 500; vertical-align: top;">Gender:</td>
+                                <td>{{ user.gender }}</td>
+                            </tr>
+                            <tr>
+                                <td style="width: 100px; font-weight: 500; vertical-align: top;">BIB:</td>
+                                <td>{{ user.bib }}</td>
+                            </tr>
+                            <tr>
+                                <td style="width: 100px; font-weight: 500; vertical-align: top;">Date of birth:</td>
+                                <td>{{ user.dob }}</td>
+                            </tr>
+                            <tr>
+                                <td style="width: 100px; font-weight: 500; vertical-align: top;">Country:</td>
+                                <td>{{ user.country }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2" style="text-align: center; font-weight: 700; font-size: 18px; padding-top: 15px;">
+                    Emergency Contact
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2" style="background: #fff; padding: 10px; border-radius: 5px;">
+                    <table>
+                        <tbody>
+                            <tr>
+                                <td style="width: 100px; font-weight: 500; vertical-align: top;">Name:</td>
+                                <td>{{ user.emergency_contact }}</td>
+                            </tr>
+                            <tr>
+                                <td style="width: 100px; font-weight: 500; vertical-align: top;">Phone:</td>
+                                <td>{{ user.emergency_contact_no }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2" style="text-align: center; font-weight: 700; font-size: 18px; padding-top: 15px;">
+                    Event details
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2" style="background: #fff; padding: 10px; border-radius: 5px;">
+                    <table>
+                        <tbody>
+                            <tr>
+                                <td style="width: 100px; font-weight: 500; vertical-align: top;">Name:</td>
+                                <td>{{ stage.name }}: {{ stageCategory.name }}</td>
+                            </tr>
+                            <tr>
+                                <td style="width: 100px; font-weight: 500; vertical-align: top;">Location:</td>
+                                <td>{{ stage.location }}</td>
+                            </tr>
+                            <tr>
+                                <td colspan="2">
+                                    <p>Please keep your BIB number with you on the day of the event. It helps us to
+                                        identify you.</p>
+                                    <p>If there has been anything change about the event, we will update our website.
+                                    </p>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2" style="text-align: center; font-weight: 700; font-size: 18px; padding-top: 15px;">
+                    User details
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2" style="background: #fff; padding: 10px; border-radius: 5px;">
+                    <table>
+                        <tbody>
+                            <tr>
+                                <td style="width: 100px; font-weight: 500; vertical-align: top;">Email:</td>
+                                <td>
+                                    <strong style="font-size: 16px; display: block; margin-bottom: 2px;">
+                                        {{ user.email }}
+                                    </strong>
+                                    <span style="color: #afafaf;">Same as the email you registered with.</span>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td style="width: 100px; font-weight: 500; vertical-align: top;">Password:</td>
+                                <td>
+                                    <strong style="font-size: 16px; display: block; margin-bottom: 2px;">
+                                        password
+                                    </strong>
+                                    <span style="color: #afafaf;">
+                                        For now its 'password'. Do not forget to change it.
+                                    </span>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td colspan="2" style="line-height: 1.5;">
+                                    <p>Please check your details carefully. If anything is incorrect, login with
+                                        the details
+                                        provided and update your profile.</p>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2" style="padding-top: 30px;">
+                    <strong>Notes:*</strong>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2"
+                    style="background: #fff; font-weight: normal; text-align: center; padding: 10px 20px; border-radius: 5px;">
+                    <p style="margin: 0;">You need to collect your BIB number at Race venue on the day of the event.</p>
+                </td>
+            </tr>
+        </tbody>
+        <tfoot>
+            <tr>
+                <td colspan="2">
+                    <p>Thank you for signing up to our event. We are excited to have you on board.</p>
+                    <p>For more information, please visit our website
+                        <a href="{{ links.event }}">trailmandu.com</a>.
+                    </p>
+                    <p>Best regards, <br>Trailmandu Team</p>
+                </td>
+            </tr>
+        </tfoot>
+    </table>
+</body>
+</html>

@@ -14,13 +14,16 @@ const worker = new Worker('emailQueue', async (job) => {
     const { fileName, replacements, props, senderEmail, attachments, category } = job.data;
     
     const { sendEmail } = useMailTrap();
-    const recipientsList = props.recipients.map((r: any) => r.email).join(', ');
+    const recipientsList = (props?.recipients && props.recipients.length > 0)
+        ? props.recipients.map((r: any) => r.email).join(', ')
+        : (job.data.to || replacements?.user?.email || 'unknown');
+    const finalSubject = props?.subject || job.data.subject || replacements?.title || 'No Subject';
     
     // Create PENDING log
     const log = await prisma.notificationLog.create({
         data: {
             recipient: recipientsList,
-            subject: props.subject,
+            subject: finalSubject,
             status: 'PENDING',
             jobId: job.id?.toString(),
         }

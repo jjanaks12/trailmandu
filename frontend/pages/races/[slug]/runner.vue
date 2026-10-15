@@ -1,5 +1,4 @@
 <script lang="ts" setup>
-import { showImage } from '~/lib/filters'
 import type { TrailRace } from '~/lib/types'
 import { useEventStore } from '~/store/event'
 
@@ -83,7 +82,9 @@ useHead(() => {
 
 <template>
     <section v-if="!isPending && trailRace" class="md:min-h-screen md:w-full">
-        <PagesDefaultRacesRegistrationForm :event-id="trailRace.id" :trail-race="trailRace" mode="runner" />
+        <ClientOnly>
+            <PagesDefaultRacesRegistrationForm :event-id="trailRace.id" :trail-race="trailRace" mode="runner" />
+        </ClientOnly>
     </section>
     <div v-else class="h-screen w-screen overflow-hidden flex flex-col md:flex-row relative bg-gray-50">
         <div class="hidden md:flex flex-col w-1/2 h-full relative">
