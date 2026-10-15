@@ -67,6 +67,7 @@ export class StageController {
                     description: validationData.description,
                     location: validationData.location,
                     event_id: validationData.event_id,
+                    has_shirt: validationData.has_shirt !== false,
                     ...body
                 }
             }))
@@ -104,6 +105,7 @@ export class StageController {
                     description: validationData.description,
                     location: validationData.location,
                     event_id: validationData.event_id,
+                    has_shirt: validationData.has_shirt !== false,
                     updated_at: moment.utc().toISOString()
                 }
             }))

@@ -406,6 +406,7 @@ model Stage {
   excerpt     String    @db.Text
   description String    @db.LongText
   location    String
+  has_shirt   Boolean   @default(true)
   created_at  DateTime  @default(now())
   updated_at  DateTime?
   deleted_at  DateTime?

@@ -40,6 +40,37 @@ const formStageId = computed(() => form.value?.values?.stage_id || null)
 const formStageCategoryId = computed(() => form.value?.values?.stage_category_id || null)
 const formIsSeasonPass = computed(() => !!form.value?.values?.is_season_pass)
 
+const currentSelectedStage = computed(() => {
+    const stageId = formStageId.value || (route.query.stage_id as string)
+    if (stageId) {
+        return props.trailRace.stages?.find(s => s.id === stageId) || null
+    }
+    return stageList.value[0] || null
+})
+
+const shouldShowShirtSize = computed(() => {
+    if (props.mode !== 'runner') return false
+    if (formIsSeasonPass.value) {
+        return props.trailRace.stages?.some(s => s.has_shirt !== false) ?? true
+    }
+    if (!currentSelectedStage.value) return true
+    return currentSelectedStage.value.has_shirt !== false
+})
+
+const runnerValidationSchema = computed(() => {
+    return trailRaceRunner.shape({
+        size_id: shouldShowShirtSize.value
+            ? Y.string().required().label("Shirt size")
+            : Y.string().optional().nullable().label("Shirt size")
+    })
+})
+
+watch(shouldShowShirtSize, (show) => {
+    if (!show && form.value) {
+        form.value.setFieldValue('size_id', undefined)
+    }
+})
+
 // getting list of available stages
 const upcomingStages = computed(() => props.trailRace.stages
     .map(stage => stage.stage_categories
@@ -202,7 +233,11 @@ const onSubmit: SubmissionHandler = async (values: any) => {
         if (props.mode == 'volunteer')
             showThankyouDialog.value = await saveVoluteer(values, props.trailRace.id)
         else {
-            const payload = { ...values, selected_addons: selectedAddons.value }
+            const payload = {
+                ...values,
+                selected_addons: selectedAddons.value,
+                size_id: shouldShowShirtSize.value ? values.size_id : null
+            }
             showThankyouDialog.value = await saveRunner(payload, props.trailRace.id)
         }
     } catch (error) {
@@ -338,7 +373,7 @@ onMounted(() => {
                     </div>
                 </Form>
                 <Form ref="form" class="space-y-8"
-                    :validation-schema="mode == 'runner' ? trailRaceRunner : trailRaceVolunteer"
+                    :validation-schema="mode == 'runner' ? runnerValidationSchema : trailRaceVolunteer"
                     v-slot="{ values, setFieldValue }" @submit="onSubmit" v-if="hasEnteredEmail">
                     <div
                         class="bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow duration-200 overflow-hidden">
@@ -441,7 +476,7 @@ onMounted(() => {
                             </div>
 
                             <!-- Demographics -->
-                            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <div class="grid grid-cols-1 gap-6" :class="shouldShowShirtSize ? 'md:grid-cols-3' : 'md:grid-cols-2'">
                                 <Field name="country_id" as="div" v-slot="{ value, handleChange }" class="space-y-2">
                                     <Label class="text-sm font-medium text-gray-700 flex items-center gap-2">
                                         <Flag :size="16" class="text-gray-400" />
@@ -485,7 +520,8 @@ onMounted(() => {
                                     <ErrorMessage class="error__message" name="gender_id" />
                                 </Field>
 
-                                <Field name="size_id" as="div" v-slot="{ value, handleChange }" class="space-y-2">
+                                <Field name="size_id" as="div" v-slot="{ value, handleChange }" class="space-y-2"
+                                    v-if="shouldShowShirtSize">
                                     <Label class="text-sm font-medium text-gray-700 flex items-center gap-2">
                                         <ShirtIcon :size="16" class="text-gray-400" />
                                         Shirt size

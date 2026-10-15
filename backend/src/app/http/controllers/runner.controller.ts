@@ -166,7 +166,7 @@ export class RunnerController {
                         phone_number: validationData.phone_number,
                         // age_category_id: validationData.age_category_id,
                         country_id: validationData.country_id,
-                        size_id: validationData.size_id,
+                        size_id: validationData.size_id || null,
                         gender_id: validationData.gender_id
                     },
                     include: {
@@ -187,7 +187,7 @@ export class RunnerController {
                         phone_number: validationData.phone_number,
                         // age_category_id: validationData.age_category_id,
                         country_id: validationData.country_id,
-                        size_id: validationData.size_id,
+                        size_id: validationData.size_id || null,
                         gender_id: validationData.gender_id
                     },
                     include: {
@@ -275,7 +275,7 @@ export class RunnerController {
                         club_name: validationData.description.club_name,
                         emergency_contact_name: validationData.description.emergency_contact_name,
                         emergency_contact_no: validationData.description.emergency_contact_phone,
-                        shirt_id: validationData.size_id,
+                        shirt_id: validationData.size_id || null,
                         season_pass_id: validationData.is_season_pass ? validationData.season_pass_id : null
                     }
                 })

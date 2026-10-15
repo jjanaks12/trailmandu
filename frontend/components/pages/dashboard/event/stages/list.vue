@@ -108,6 +108,11 @@ watch(showDeleted, async (newVal) => {
                             class="inline-flex items-center px-2.5 py-1 rounded-md bg-secondary/10 text-xs font-bold uppercase tracking-wider">
                             volunteers {{ stage.volunteers?.length || 0 }}
                         </div>
+                        <div
+                            class="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold uppercase tracking-wider"
+                            :class="stage.has_shirt !== false ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-600 border border-slate-200'">
+                            {{ stage.has_shirt !== false ? 'Shirt: Yes' : 'Shirt: No' }}
+                        </div>
                     </div>
 
                     <p class="text-muted-foreground text-sm leading-relaxed max-w-3xl font-body">

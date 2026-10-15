@@ -181,6 +181,7 @@ export type Stage = {
     distance: string
     difficulty: StageDifficulty
     location: string
+    has_shirt?: boolean
     start: string
     end: string
     created_at: string

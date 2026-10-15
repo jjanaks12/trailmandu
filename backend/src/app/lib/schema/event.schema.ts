@@ -16,7 +16,8 @@ export const stageSchema = Y.object({
     description: Y.string().required().label('Description'),
     location: Y.string().required().label('Location'),
     thumbnail: Y.string().required().label('Thumbnail'),
-    guide_book_file: Y.string().optional().label('Guide book file')
+    guide_book_file: Y.string().optional().label('Guide book file'),
+    has_shirt: Y.boolean().optional().default(true).label('Has shirt')
 })
 
 export const checkpointSchema = Y.object({
@@ -61,7 +62,7 @@ export const trailRaceRunner = Y.object({
     date_of_birth: Y.string().required().label("Date of birth"),
     country_id: Y.string().required().label("Country"),
     gender_id: Y.string().required().label("Gender"),
-    size_id: Y.string().required().label("Shirt size"),
+    size_id: Y.string().optional().nullable().label("Shirt size"),
     /* age_category_id: Y.string().required().label("Age category"), */
     payment_type: Y.string().oneOf(Object.values(PaymentType)).required().label("Payment type"),
     payment_method: Y.string().oneOf(Object.values(PaymentMethod)).required().label("Payment method"),

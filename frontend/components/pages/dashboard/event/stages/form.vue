@@ -34,7 +34,10 @@ const guideBookFileName = ref('')
 
 const formSubmit = async (values: any) => {
     isLoading.value = true
-    await save(props.eventId, values)
+    await save(props.eventId, {
+        ...values,
+        has_shirt: values.has_shirt !== false
+    })
     isLoading.value = false
     emit('update')
 }
@@ -91,12 +94,17 @@ const init = () => {
                 distance: props.stage.distance,
                 thumbnail: props.stage.thumbnail?.file_name,
                 guide_book_file: props.stage.guide_book_file?.file_name,
+                has_shirt: props.stage.has_shirt !== false,
             })
 
-            if (props.stage.thumbnail?.file_name)
-                showFile.value.thumbnail = true
-            if (props.stage.guide_book_file?.file_name)
-                showFile.value.guide_book_file = true
+            showFile.value.thumbnail = !!props.stage.thumbnail?.file_name
+            showFile.value.guide_book_file = !!props.stage.guide_book_file?.file_name
+        } else {
+            form.value.resetForm()
+            form.value.setFieldValue('event_id', props.eventId)
+            form.value.setFieldValue('has_shirt', true)
+            showFile.value.thumbnail = false
+            showFile.value.guide_book_file = false
         }
     }
 }
@@ -113,6 +121,10 @@ watch(endDate, () => {
 watch(form, () => {
     init()
 })
+
+watch(() => props.stage, () => {
+    init()
+}, { deep: true })
 
 onBeforeMount(() => {
     if (form.value)
@@ -211,6 +223,14 @@ onMounted(async () => {
                 </template>
             </div>
             <ErrorMessage class="error__message" name="guide_book_file" />
+        </Field>
+        <Field name="has_shirt" v-slot="{ value, handleChange }" as="div"
+            class="flex items-center justify-between p-4 border rounded-xl bg-slate-50 dark:bg-slate-900/50">
+            <div class="space-y-0.5">
+                <Label for="esf__has_shirt" class="text-sm font-medium cursor-pointer">Include Shirt Size</Label>
+                <p class="text-xs text-muted-foreground">Enable if this stage includes a shirt and asks runners for their shirt size during registration.</p>
+            </div>
+            <Switch id="esf__has_shirt" :model-value="value !== false" @update:model-value="(val: boolean) => handleChange(val)" />
         </Field>
         <Field name="description" v-slot="{ value, handleChange }" as="div" class="flex flex-col gap-2">
             <TiptapEditor :model-value="value ?? ''" @update:model-value="handleChange" :disabled="false"
