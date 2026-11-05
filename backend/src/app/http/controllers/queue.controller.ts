@@ -24,20 +24,21 @@ export class QueueController {
 
             const skip = (page - 1) * limit
 
-            const counts = await emailQueue.getJobCounts()
+            const counts: any = await emailQueue.getJobCounts()
 
             let dbStatusFilter: string | undefined
             if (statusFilter === 'completed') dbStatusFilter = 'SUCCESS'
             else if (statusFilter === 'failed') dbStatusFilter = 'FAILED'
+            else if (statusFilter === 'waiting' || statusFilter === 'delayed' || statusFilter === 'prioritized') dbStatusFilter = 'QUEUED'
 
             // Determine which queue statuses to fetch
             let queueStatusesToFetch: any[] = []
-            if (statusFilter) {
-                if (['waiting', 'active', 'delayed', 'failed', 'completed', 'paused'].includes(statusFilter)) {
+            if (statusFilter && statusFilter !== 'all') {
+                if (['waiting', 'active', 'delayed', 'failed', 'completed', 'paused', 'prioritized'].includes(statusFilter)) {
                     queueStatusesToFetch = [statusFilter]
                 }
             } else {
-                queueStatusesToFetch = ['failed']
+                queueStatusesToFetch = ['delayed', 'prioritized', 'waiting', 'active', 'failed', 'completed']
             }
 
             let mappedQueueJobs: any[] = []
@@ -118,7 +119,7 @@ export class QueueController {
             }
 
             let totalDb = 0
-            if (!statusFilter || statusFilter === 'completed' || statusFilter === 'failed') {
+            if (!statusFilter || statusFilter === 'all' || statusFilter === 'completed' || statusFilter === 'failed' || statusFilter === 'waiting' || statusFilter === 'delayed') {
                 totalDb = await prisma.emailLog.count({ where: whereClause })
             }
 
@@ -139,7 +140,7 @@ export class QueueController {
                 dbSkip = skip - totalQueue
             }
 
-            if (dbTake > 0 && (!statusFilter || statusFilter === 'completed' || statusFilter === 'failed')) {
+            if (dbTake > 0 && (!statusFilter || statusFilter === 'all' || statusFilter === 'completed' || statusFilter === 'failed' || statusFilter === 'waiting' || statusFilter === 'delayed')) {
                 const dbLogs = await prisma.emailLog.findMany({
                     where: whereClause,
                     orderBy: { created_at: 'desc' },
@@ -203,6 +204,7 @@ export class QueueController {
         const dailyLimit = parseInt(process.env.MAIL_DAILY_LIMIT || '150')
         const monthlyLimit = parseInt(process.env.MAIL_MONTHLY_LIMIT || '4000')
         const hourlyLimit = parseInt(process.env.MAIL_HOURLY_LIMIT || '150')
+        const priorityLimit = parseInt(process.env.MAIL_PRIORITY_DAILY_LIMIT || '50')
 
         const cacheKey = `__cache__/mailtrap:quota:${todayStr}`
         try {
@@ -269,31 +271,57 @@ export class QueueController {
             }
         }
 
-        if (statsSource === 'database') {
-            const todayStart = new Date()
-            todayStart.setHours(0, 0, 0, 0)
+        const todayStart = new Date()
+        todayStart.setHours(0, 0, 0, 0)
 
-            const monthStart = new Date()
-            monthStart.setDate(1)
-            monthStart.setHours(0, 0, 0, 0)
+        const monthStart = new Date()
+        monthStart.setDate(1)
+        monthStart.setHours(0, 0, 0, 0)
 
-            const [dbTodayCount, dbMonthCount] = await Promise.all([
-                prisma.emailLog.count({
-                    where: {
-                        status: 'SUCCESS',
-                        created_at: { gte: todayStart }
-                    }
-                }),
-                prisma.emailLog.count({
+        // Query today's SUCCESS email logs to accurately calculate priority email count
+        let prioritySentToday = 0
+        try {
+            const todaySuccessLogs = await prisma.emailLog.findMany({
+                where: {
+                    status: 'SUCCESS',
+                    created_at: { gte: todayStart }
+                },
+                select: { payload: true }
+            })
+
+            prioritySentToday = todaySuccessLogs.filter(log => {
+                if (!log.payload) return false
+                try {
+                    const p = typeof log.payload === 'string' ? JSON.parse(log.payload) : log.payload
+                    return p.priority === 1 || p.is_priority === true || p.category === 'manual_direct_email' || p.category === 'event_test_email'
+                } catch {
+                    return false
+                }
+            }).length
+
+            if (statsSource === 'database') {
+                todayUsed = todaySuccessLogs.length
+                monthUsed = await prisma.emailLog.count({
                     where: {
                         status: 'SUCCESS',
                         created_at: { gte: monthStart }
                     }
                 })
-            ])
-            todayUsed = dbTodayCount
-            monthUsed = dbMonthCount
+            }
+        } catch (dbErr: any) {
+            console.warn('[QueueController] Failed to query database email logs:', dbErr?.message)
         }
+
+        let prioritizedInQueue = 0
+        try {
+            const queueCounts = await emailQueue.getJobCounts('prioritized')
+            prioritizedInQueue = queueCounts.prioritized || 0
+        } catch (qErr: any) {
+            // ignore
+        }
+
+        const priorityRemaining = Math.max(0, priorityLimit - prioritySentToday)
+        const priorityPercentage = Math.min(100, Math.round((prioritySentToday / priorityLimit) * 100))
 
         const quotaData = {
             source: statsSource,
@@ -301,7 +329,17 @@ export class QueueController {
                 used: todayUsed,
                 limit: dailyLimit,
                 remaining: Math.max(0, dailyLimit - todayUsed),
-                percentage: Math.min(100, Math.round((todayUsed / dailyLimit) * 100))
+                percentage: Math.min(100, Math.round((todayUsed / dailyLimit) * 100)),
+                priorityUsed: prioritySentToday,
+                priorityRemaining: priorityRemaining,
+                priorityLimit: priorityLimit
+            },
+            priority: {
+                used: prioritySentToday,
+                limit: priorityLimit,
+                remaining: priorityRemaining,
+                percentage: priorityPercentage,
+                queued: prioritizedInQueue
             },
             month: {
                 used: monthUsed,
@@ -362,7 +400,9 @@ export class QueueController {
                 html: html || undefined,
                 text: text || undefined,
                 senderEmail: senderEmail || 'info@trailmandu.com',
-                category: 'manual_direct_email'
+                category: 'manual_direct_email',
+                priority: 1,
+                is_priority: true
             }
 
             const job = await emailQueue.add('sendEmail', payload, {
@@ -381,6 +421,9 @@ export class QueueController {
                 console.error('Failed to log immediate email to db:', err)
                 return null
             })
+
+            const todayStr = new Date().toISOString().split('T')[0]
+            await Redis.delete(`__cache__/mailtrap:quota:${todayStr}`).catch(() => {})
 
             res.json({
                 message: 'Email scheduled for immediate delivery',
@@ -420,10 +463,17 @@ export class QueueController {
 
                     // 3. If waiting or active, push to the head of the queue with top priority
                     if (job.data) {
-                        await emailQueue.add(job.name || 'sendEmail', job.data, { priority: 1, lifo: true })
+                        const priorityData = {
+                            ...job.data,
+                            priority: 1,
+                            is_priority: true
+                        }
+                        await emailQueue.add(job.name || 'sendEmail', priorityData, { priority: 1, lifo: true })
                         if (state === 'waiting' || state === 'prioritized') {
                             await job.remove().catch(() => {})
                         }
+                        const todayStr = new Date().toISOString().split('T')[0]
+                        await Redis.delete(`__cache__/mailtrap:quota:${todayStr}`).catch(() => {})
                         res.json({ message: 'Email moved to head of queue for immediate delivery' })
                         return
                     }
@@ -438,7 +488,14 @@ export class QueueController {
                         ? JSON.parse(emailLog.payload)
                         : emailLog.payload
 
-                    await emailQueue.add('sendEmail', payload, { priority: 1, lifo: true })
+                    const priorityPayload = {
+                        ...payload,
+                        priority: 1,
+                        is_priority: true
+                    }
+                    await emailQueue.add('sendEmail', priorityPayload, { priority: 1, lifo: true })
+                    const todayStr = new Date().toISOString().split('T')[0]
+                    await Redis.delete(`__cache__/mailtrap:quota:${todayStr}`).catch(() => {})
                     res.json({ message: 'Email queued for immediate delivery' })
                     return
                 }

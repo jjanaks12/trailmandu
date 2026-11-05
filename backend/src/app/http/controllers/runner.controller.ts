@@ -851,6 +851,9 @@ export class RunnerController {
                     }
                 }
 
+                const staggerDelayMs = parseInt(process.env.EMAIL_STAGGER_MS || '3000', 10)
+                const delay = queuedCount * staggerDelayMs
+
                 await emailQueue.add('sendEmail', {
                     to: personal.email,
                     subject: finalSubject,
@@ -858,6 +861,8 @@ export class RunnerController {
                     senderEmail: 'info@trailmandu.com',
                     category: 'event_mass_email',
                     attachments
+                }, {
+                    delay
                 })
 
                 await prisma.emailLog.create({

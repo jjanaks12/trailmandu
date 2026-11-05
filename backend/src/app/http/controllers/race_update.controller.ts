@@ -59,10 +59,14 @@ export class RaceUpdateController {
                     }
                 });
 
+                const staggerDelayMs = parseInt(process.env.EMAIL_STAGGER_MS || '3000', 10);
+                let count = 0;
                 for (const runner of runners) {
                     if (runner.personal && runner.personal.email) {
                         const eventName = runner.stage?.event?.name || 'TrailRace Event';
                         const stageName = runner.stage?.name || 'Stage';
+                        const delay = count * staggerDelayMs;
+                        count++;
                         
                         await emailQueue.add('sendEmail', {
                             to: runner.personal.email,
@@ -75,6 +79,8 @@ export class RaceUpdateController {
                                 newStart: new_start,
                                 newEnd: new_end
                             })
+                        }, {
+                            delay
                         });
                     }
                 }
@@ -95,11 +101,15 @@ export class RaceUpdateController {
 
                 // to avoid duplicate emails if they registered for multiple stages
                 const uniqueEmails = new Set();
+                const staggerDelayMs = parseInt(process.env.EMAIL_STAGGER_MS || '3000', 10);
+                let count = 0;
 
                 for (const runner of runners) {
                     if (runner.personal && runner.personal.email && !uniqueEmails.has(runner.personal.email)) {
                         uniqueEmails.add(runner.personal.email);
                         const eventName = runner.event?.name || 'TrailRace Event';
+                        const delay = count * staggerDelayMs;
+                        count++;
                         
                         await emailQueue.add('sendEmail', {
                             to: runner.personal.email,
@@ -111,6 +121,8 @@ export class RaceUpdateController {
                                 newStart: new_start,
                                 newEnd: new_end
                             })
+                        }, {
+                            delay
                         });
                     }
                 }

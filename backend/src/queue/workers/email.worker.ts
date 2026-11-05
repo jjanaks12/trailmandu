@@ -169,16 +169,25 @@ export const emailWorker = new Worker('emailQueue', async (job: Job) => {
         });
 
         // 5. Update DB log to SUCCESS
+        const isPriority = (job.opts?.priority === 1) || job.data?.priority === 1 || job.data?.is_priority === true || job.data?.category === 'manual_direct_email' || job.data?.category === 'event_test_email';
+
         try {
             await prisma.emailLog.create({
                 data: {
                     recipient: recipientEmail,
                     subject: finalSubject,
                     status: 'SUCCESS',
-                    payload: job.data,
+                    payload: {
+                        ...job.data,
+                        priority: isPriority ? 1 : 0,
+                        is_priority: isPriority
+                    },
                     parentId: job.data?.resendParentId || null
                 }
             });
+
+            const todayStr = new Date().toISOString().split('T')[0];
+            await redisConnection.del(`__cache__/mailtrap:quota:${todayStr}`).catch(() => {});
         } catch (dbErr) {
             console.error('[emailWorker] Failed to save SUCCESS emailLog:', dbErr);
         }
@@ -209,8 +218,8 @@ export const emailWorker = new Worker('emailQueue', async (job: Job) => {
 }, {
     connection: redisConnection,
     limiter: {
-        max: 5,
-        duration: 1000
+        max: 1,
+        duration: 3000 // 1 email every 3 seconds to protect provider rate limits and avoid spam flags
     }
 });
 

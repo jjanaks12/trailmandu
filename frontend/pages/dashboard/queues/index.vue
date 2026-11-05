@@ -31,7 +31,7 @@ interface EmailLog {
     recipient: string
     recipient_name?: string | null
     subject: string
-    status: 'SUCCESS' | 'FAILED' | 'WAITING' | 'ACTIVE' | 'DELAYED' | 'QUEUED'
+    status: 'SUCCESS' | 'FAILED' | 'WAITING' | 'ACTIVE' | 'DELAYED' | 'QUEUED' | 'PRIORITIZED' | 'PAUSED'
     error: string | null
     created_at: string
     payload?: any
@@ -47,7 +47,14 @@ interface QuotaBucket {
 
 interface QuotaData {
     source?: string
-    today: QuotaBucket
+    today: QuotaBucket & {
+        priorityUsed?: number
+        priorityRemaining?: number
+        priorityLimit?: number
+    }
+    priority?: QuotaBucket & {
+        queued?: number
+    }
     month: QuotaBucket
     hour: { limit: number; note: string }
     domain: { name: string; status: string; verified: boolean }
@@ -59,7 +66,7 @@ const quota = ref<QuotaData | null>(null)
 const page = ref(1)
 const limit = ref(20)
 const total = ref(0)
-const statusFilter = ref<string>('failed')
+const statusFilter = ref<string>('all')
 const searchQuery = ref('')
 
 const dateFilter = ref('all')
@@ -73,13 +80,19 @@ const counts = ref<{
     failed: number
     delayed: number
     paused: number
+    prioritized: number
 }>({
     waiting: 0,
     active: 0,
     completed: 0,
     failed: 0,
     delayed: 0,
-    paused: 0
+    paused: 0,
+    prioritized: 0
+})
+
+const totalCounts = computed(() => {
+    return (counts.value.waiting || 0) + (counts.value.active || 0) + (counts.value.completed || 0) + (counts.value.failed || 0) + (counts.value.delayed || 0) + (counts.value.prioritized || 0) + (counts.value.paused || 0)
 })
 
 const logs = ref<EmailLog[]>([])
@@ -162,8 +175,10 @@ const getBadgeVariant = (status: string) => {
         case 'SUCCESS': return 'default'
         case 'FAILED': return 'destructive'
         case 'ACTIVE': return 'info'
+        case 'PRIORITIZED': return 'default'
         case 'WAITING': return 'secondary'
         case 'DELAYED': return 'outline'
+        case 'PAUSED': return 'outline'
         default: return 'outline'
     }
 }
@@ -337,79 +352,160 @@ onMounted(() => {
             </div>
 
             <!-- Quota Metrics Grid -->
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <!-- Daily Quota -->
-                <div class="p-4 rounded-lg bg-muted/40 border border-border/60 space-y-2">
-                    <div class="flex items-center justify-between text-xs font-medium">
-                        <span class="text-muted-foreground">Today's Daily Quota</span>
-                        <span class="font-semibold text-foreground">{{ quota.today.used }} / {{ quota.today.limit }}</span>
+                <div class="p-4 rounded-lg bg-muted/40 border border-border/60 space-y-2 flex flex-col justify-between">
+                    <div class="space-y-2">
+                        <div class="flex items-center justify-between text-xs font-medium">
+                            <span class="text-muted-foreground">Today's Daily Quota</span>
+                            <span class="font-semibold text-foreground">{{ quota.today.used }} / {{ quota.today.limit }}</span>
+                        </div>
+                        <!-- Progress Bar -->
+                        <div class="h-2 w-full bg-muted rounded-full overflow-hidden">
+                            <div
+                                class="h-full rounded-full transition-all duration-500"
+                                :class="quota.today.percentage > 85 ? 'bg-red-500' : quota.today.percentage > 60 ? 'bg-amber-500' : 'bg-primary'"
+                                :style="{ width: Math.max(quota.today.percentage, 2) + '%' }"
+                            ></div>
+                        </div>
+                        <div class="flex items-center justify-between text-[11px] text-muted-foreground pt-0.5">
+                            <span>{{ quota.today.percentage }}% used</span>
+                            <span class="font-medium text-emerald-600">{{ quota.today.remaining }} remaining today</span>
+                        </div>
                     </div>
-                    <!-- Progress Bar -->
-                    <div class="h-2 w-full bg-muted rounded-full overflow-hidden">
-                        <div
-                            class="h-full rounded-full transition-all duration-500"
-                            :class="quota.today.percentage > 85 ? 'bg-red-500' : quota.today.percentage > 60 ? 'bg-amber-500' : 'bg-primary'"
-                            :style="{ width: Math.max(quota.today.percentage, 2) + '%' }"
-                        ></div>
+
+                    <!-- Priority Sub-Indicator inside Daily Quota -->
+                    <div v-if="quota.priority" class="pt-2 border-t border-border/40 flex items-center justify-between text-[11px]">
+                        <span class="text-muted-foreground flex items-center gap-1">
+                            <ZapIcon class="w-3 h-3 text-amber-500 fill-amber-500" />
+                            <span>Priority sends:</span>
+                        </span>
+                        <span class="font-medium text-foreground">
+                            <span class="text-amber-600 font-semibold">{{ quota.priority.used }}</span> sent &bull; 
+                            <span class="text-emerald-600 font-semibold">{{ quota.priority.remaining }}</span> left
+                        </span>
                     </div>
-                    <div class="flex items-center justify-between text-[11px] text-muted-foreground pt-0.5">
-                        <span>{{ quota.today.percentage }}% used</span>
-                        <span class="font-medium text-emerald-600">{{ quota.today.remaining }} remaining today</span>
+                </div>
+
+                <!-- Priority Email Quota -->
+                <div class="p-4 rounded-lg bg-muted/40 border border-border/60 space-y-2 flex flex-col justify-between">
+                    <div class="space-y-2">
+                        <div class="flex items-center justify-between text-xs font-medium">
+                            <span class="text-muted-foreground flex items-center gap-1.5 font-medium">
+                                <ZapIcon class="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+                                <span>Priority Email Quota</span>
+                            </span>
+                            <span class="font-semibold text-foreground">
+                                {{ quota.priority?.used || 0 }} / {{ quota.priority?.limit || 50 }}
+                            </span>
+                        </div>
+                        <!-- Progress Bar -->
+                        <div class="h-2 w-full bg-muted rounded-full overflow-hidden">
+                            <div
+                                class="h-full rounded-full transition-all duration-500 bg-amber-500"
+                                :class="(quota.priority?.percentage || 0) > 85 ? 'bg-red-500' : 'bg-amber-500'"
+                                :style="{ width: Math.max(quota.priority?.percentage || 0, 2) + '%' }"
+                            ></div>
+                        </div>
+                        <div class="flex items-center justify-between text-[11px] text-muted-foreground pt-0.5">
+                            <span>{{ quota.priority?.percentage || 0 }}% used</span>
+                            <span class="font-medium text-emerald-600">{{ quota.priority?.remaining || 0 }} remaining today</span>
+                        </div>
+                    </div>
+
+                    <div class="pt-2 border-t border-border/40 flex items-center justify-between text-[11px] text-muted-foreground">
+                        <span>Speed: Instant delivery</span>
+                        <span v-if="(quota.priority?.queued || 0) > 0" class="text-amber-600 font-semibold flex items-center gap-1">
+                            <span class="relative flex h-2 w-2">
+                                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                                <span class="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                            </span>
+                            {{ quota.priority?.queued }} queued now
+                        </span>
+                        <span v-else class="text-emerald-600 font-medium">No queue backlog</span>
                     </div>
                 </div>
 
                 <!-- Monthly Quota -->
-                <div class="p-4 rounded-lg bg-muted/40 border border-border/60 space-y-2">
-                    <div class="flex items-center justify-between text-xs font-medium">
-                        <span class="text-muted-foreground">Monthly Billing Quota</span>
-                        <span class="font-semibold text-foreground">{{ quota.month.used }} / {{ quota.month.limit.toLocaleString() }}</span>
+                <div class="p-4 rounded-lg bg-muted/40 border border-border/60 space-y-2 flex flex-col justify-between">
+                    <div class="space-y-2">
+                        <div class="flex items-center justify-between text-xs font-medium">
+                            <span class="text-muted-foreground">Monthly Billing Quota</span>
+                            <span class="font-semibold text-foreground">{{ quota.month.used }} / {{ quota.month.limit.toLocaleString() }}</span>
+                        </div>
+                        <!-- Progress Bar -->
+                        <div class="h-2 w-full bg-muted rounded-full overflow-hidden">
+                            <div
+                                class="h-full rounded-full transition-all duration-500"
+                                :class="quota.month.percentage > 85 ? 'bg-red-500' : quota.month.percentage > 60 ? 'bg-amber-500' : 'bg-primary'"
+                                :style="{ width: Math.max(quota.month.percentage, 1) + '%' }"
+                            ></div>
+                        </div>
+                        <div class="flex items-center justify-between text-[11px] text-muted-foreground pt-0.5">
+                            <span>{{ quota.month.percentage }}% used</span>
+                            <span class="font-medium text-emerald-600">{{ quota.month.remaining.toLocaleString() }} remaining this month</span>
+                        </div>
                     </div>
-                    <!-- Progress Bar -->
-                    <div class="h-2 w-full bg-muted rounded-full overflow-hidden">
-                        <div
-                            class="h-full rounded-full transition-all duration-500"
-                            :class="quota.month.percentage > 85 ? 'bg-red-500' : quota.month.percentage > 60 ? 'bg-amber-500' : 'bg-primary'"
-                            :style="{ width: Math.max(quota.month.percentage, 1) + '%' }"
-                        ></div>
-                    </div>
-                    <div class="flex items-center justify-between text-[11px] text-muted-foreground pt-0.5">
-                        <span>{{ quota.month.percentage }}% used</span>
-                        <span class="font-medium text-emerald-600">{{ quota.month.remaining.toLocaleString() }} remaining this month</span>
+
+                    <div class="pt-2 border-t border-border/40 text-[11px] text-muted-foreground flex items-center justify-between">
+                        <span>Reset: 1st of month</span>
+                        <span class="font-mono text-foreground">{{ (quota.month.limit - quota.month.used).toLocaleString() }} left</span>
                     </div>
                 </div>
 
                 <!-- Sending Health & Domain -->
                 <div class="p-4 rounded-lg bg-muted/40 border border-border/60 flex flex-col justify-between">
-                    <div class="flex items-center justify-between text-xs font-medium mb-1">
-                        <span class="text-muted-foreground">Sender Domain Health</span>
-                        <span class="text-emerald-600 font-semibold flex items-center gap-1">
-                            <CheckCircle2Icon class="w-3.5 h-3.5" />
-                            <span>{{ quota.domain.status.toUpperCase() }}</span>
-                        </span>
+                    <div>
+                        <div class="flex items-center justify-between text-xs font-medium mb-1">
+                            <span class="text-muted-foreground">Sender Domain Health</span>
+                            <span class="text-emerald-600 font-semibold flex items-center gap-1">
+                                <CheckCircle2Icon class="w-3.5 h-3.5" />
+                                <span>{{ quota.domain.status.toUpperCase() }}</span>
+                            </span>
+                        </div>
+                        <div class="text-xs text-muted-foreground space-y-1 mt-2">
+                            <div class="flex items-center justify-between">
+                                <span>Domain:</span>
+                                <span class="font-mono text-foreground font-medium">{{ quota.domain.name }}</span>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span>SPF / DKIM / DMARC:</span>
+                                <span class="text-emerald-600 font-medium">Verified (100% Pass)</span>
+                            </div>
+                        </div>
                     </div>
-                    <div class="text-xs text-muted-foreground space-y-1">
-                        <div class="flex items-center justify-between">
-                            <span>Domain:</span>
-                            <span class="font-mono text-foreground font-medium">{{ quota.domain.name }}</span>
-                        </div>
-                        <div class="flex items-center justify-between">
-                            <span>SPF / DKIM / DMARC:</span>
-                            <span class="text-emerald-600 font-medium">Verified (100% Pass)</span>
-                        </div>
+
+                    <div class="pt-2 border-t border-border/40 text-[11px] text-muted-foreground flex items-center justify-between mt-2">
+                        <span>Status:</span>
+                        <span class="text-emerald-600 font-medium flex items-center gap-1">
+                            <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+                            Active & Ready
+                        </span>
                     </div>
                 </div>
             </div>
         </div>
 
         <Tabs :model-value="statusFilter" @update:model-value="handleTabChange" class="w-full" v-if="!isLoading">
-            <TabsList class="w-full grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 h-auto p-1 gap-2">
-                <TabsTrigger value="failed" class="py-3 flex flex-col items-center justify-center gap-1">
-                    <span class="text-sm font-medium text-muted-foreground">Failed</span>
-                    <span class="text-2xl font-bold text-red-600">{{ counts.failed }}</span>
+            <TabsList class="w-full grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 h-auto p-1 gap-2">
+                <TabsTrigger value="all" class="py-3 flex flex-col items-center justify-center gap-1">
+                    <span class="text-sm font-medium text-muted-foreground">All Activity</span>
+                    <span class="text-2xl font-bold">{{ totalCounts }}</span>
+                </TabsTrigger>
+                <TabsTrigger value="prioritized" class="py-3 flex flex-col items-center justify-center gap-1">
+                    <span class="text-sm font-medium text-muted-foreground flex items-center gap-1">
+                        <ZapIcon class="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+                        <span>Prioritized</span>
+                    </span>
+                    <span class="text-2xl font-bold text-amber-600">{{ counts.prioritized || 0 }}</span>
+                </TabsTrigger>
+                <TabsTrigger value="delayed" class="py-3 flex flex-col items-center justify-center gap-1">
+                    <span class="text-sm font-medium text-muted-foreground">Delayed</span>
+                    <span class="text-2xl font-bold text-orange-500">{{ counts.delayed }}</span>
                 </TabsTrigger>
                 <TabsTrigger value="waiting" class="py-3 flex flex-col items-center justify-center gap-1">
                     <span class="text-sm font-medium text-muted-foreground">Waiting</span>
-                    <span class="text-2xl font-bold">{{ counts.waiting }}</span>
+                    <span class="text-2xl font-bold text-amber-500">{{ counts.waiting }}</span>
                 </TabsTrigger>
                 <TabsTrigger value="active" class="py-3 flex flex-col items-center justify-center gap-1">
                     <span class="text-sm font-medium text-muted-foreground">Active</span>
@@ -419,9 +515,9 @@ onMounted(() => {
                     <span class="text-sm font-medium text-muted-foreground">Completed</span>
                     <span class="text-2xl font-bold text-green-600">{{ counts.completed }}</span>
                 </TabsTrigger>
-                <TabsTrigger value="delayed" class="py-3 flex flex-col items-center justify-center gap-1">
-                    <span class="text-sm font-medium text-muted-foreground">Delayed</span>
-                    <span class="text-2xl font-bold text-orange-500">{{ counts.delayed }}</span>
+                <TabsTrigger value="failed" class="py-3 flex flex-col items-center justify-center gap-1">
+                    <span class="text-sm font-medium text-muted-foreground">Failed</span>
+                    <span class="text-2xl font-bold text-red-600">{{ counts.failed }}</span>
                 </TabsTrigger>
                 <TabsTrigger value="paused" class="py-3 flex flex-col items-center justify-center gap-1">
                     <span class="text-sm font-medium text-muted-foreground">Paused</span>
@@ -474,9 +570,19 @@ onMounted(() => {
                             </TableCell>
                             <TableCell class="max-w-xs truncate" :title="log.subject">{{ log.subject }}</TableCell>
                             <TableCell>
-                                <Badge :variant="getBadgeVariant(log.status)">
-                                    {{ log.status }}
-                                </Badge>
+                                <div class="flex items-center gap-1.5 flex-wrap">
+                                    <Badge :variant="getBadgeVariant(log.status)">
+                                        {{ log.status }}
+                                    </Badge>
+                                    <span
+                                        v-if="log.status === 'PRIORITIZED' || log.payload?.priority === 1 || log.payload?.is_priority"
+                                        class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/20"
+                                        title="Priority Email"
+                                    >
+                                        <ZapIcon class="w-2.5 h-2.5 text-amber-500 fill-amber-500" />
+                                        <span>Priority</span>
+                                    </span>
+                                </div>
                                 <div v-if="log.error"
                                     class="text-xs text-red-500 mt-1 truncate max-w-[200px] cursor-pointer hover:underline"
                                     @click="selectedError = log.error" title="Click to view full error">
@@ -490,7 +596,7 @@ onMounted(() => {
                             <TableCell class="text-right">
                                 <div class="flex items-center justify-end gap-2">
                                     <Button
-                                        v-if="log.status === 'WAITING' || log.status === 'DELAYED' || log.status === 'QUEUED'"
+                                        v-if="log.status === 'WAITING' || log.status === 'DELAYED' || log.status === 'QUEUED' || log.status === 'PRIORITIZED'"
                                         size="sm"
                                         class="cursor-pointer bg-primary/10 text-primary hover:bg-primary/20 hover:text-primary font-medium"
                                         @click="sendJobImmediately(log)"
