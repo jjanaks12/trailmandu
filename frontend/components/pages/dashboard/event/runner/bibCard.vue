@@ -1,6 +1,7 @@
 <script lang="ts" setup>
-import { ref, watch, useTemplateRef } from 'vue'
+import { ref, watch, useTemplateRef, computed } from 'vue'
 import PrindD from 'printd'
+import moment from 'moment'
 import type { EventRunner } from '~/lib/types'
 import BIBBg25kImg from '~/assets/images/bib-25k.png'
 import BIBBg10kImg from '~/assets/images/bib-10k.png'
@@ -26,6 +27,7 @@ interface BibCardProps {
 
 const { get } = useEventStore()
 const eventSettings = ref<any>({})
+const currentTrailRace = ref<any>(null)
 
 const loadEventSettings = async () => {
     if (props.runners && props.runners.length > 0) {
@@ -33,11 +35,33 @@ const loadEventSettings = async () => {
         if (event_id) {
             const trailRace = await get(event_id)
             if (trailRace) {
+                currentTrailRace.value = trailRace
                 const parsed = typeof trailRace.details === 'string' ? JSON.parse(trailRace.details) : (trailRace.details || {})
                 eventSettings.value = Array.isArray(parsed) ? {} : (parsed.settings || {})
             }
         }
     }
+}
+
+const formatBibDistance = (runner: EventRunner) => {
+    const raw = runner.stage_category?.distance || runner.stage?.distance || ''
+    if (!raw) return ''
+    const num = parseFloat(String(raw).replace(/[^0-9.]/g, ''))
+    if (!isNaN(num) && !String(raw).toLowerCase().includes('km')) {
+        return `${num} KM`
+    }
+    return String(raw).toUpperCase()
+}
+
+const formatBibLocation = (runner: EventRunner) => {
+    return runner.stage_category?.location || runner.stage?.location || currentTrailRace.value?.location || currentTrailRace.value?.address || ''
+}
+
+const formatBibDate = (runner: EventRunner, formatStr = 'MMM DD, YYYY') => {
+    const rawDate = runner.stage_category?.start || runner.stage?.start || currentTrailRace.value?.start_date || currentTrailRace.value?.created_at
+    if (!rawDate) return ''
+    const m = moment(rawDate)
+    return m.isValid() ? m.format(formatStr || 'MMM DD, YYYY') : ''
 }
 
 const props = defineProps<BibCardProps>()
@@ -214,6 +238,57 @@ const getBibImage = (runner: EventRunner) => {
                                 whiteSpace: 'nowrap'
                             }">
                                 {{ runner.bib }}
+                            </div>
+
+                            <!-- Distance -->
+                            <div v-if="eventSettings.bib_layout.distance && formatBibDistance(runner)" :style="{
+                                position: 'absolute',
+                                top: (eventSettings.bib_layout.distance.top || 0) + '%',
+                                left: (eventSettings.bib_layout.distance.left || 0) + '%',
+                                transform: 'translate(-50%, -50%)',
+                                color: eventSettings.bib_layout.distance.color || '#000000',
+                                fontFamily: 'Arial, sans-serif',
+                                fontWeight: eventSettings.bib_layout.distance.fontWeight || 'bold',
+                                fontSize: ((eventSettings.bib_layout.distance.fontSize || 36) / 10) + 'cqw',
+                                lineHeight: 1,
+                                whiteSpace: 'nowrap',
+                                textTransform: eventSettings.bib_layout.distance.textTransform || 'uppercase'
+                            }">
+                                {{ formatBibDistance(runner) }}
+                            </div>
+
+                            <!-- Location -->
+                            <div v-if="eventSettings.bib_layout.location && formatBibLocation(runner)" :style="{
+                                position: 'absolute',
+                                top: (eventSettings.bib_layout.location.top || 0) + '%',
+                                left: (eventSettings.bib_layout.location.left || 0) + '%',
+                                transform: 'translate(-50%, -50%)',
+                                color: eventSettings.bib_layout.location.color || '#333333',
+                                fontFamily: 'Arial, sans-serif',
+                                fontWeight: eventSettings.bib_layout.location.fontWeight || 'normal',
+                                fontSize: ((eventSettings.bib_layout.location.fontSize || 26) / 10) + 'cqw',
+                                lineHeight: 1,
+                                whiteSpace: 'nowrap',
+                                textTransform: eventSettings.bib_layout.location.textTransform || 'none'
+                            }">
+                                {{ formatBibLocation(runner) }}
+                            </div>
+
+                            <!-- Event Date -->
+                            <div v-if="eventSettings.bib_layout.date && formatBibDate(runner, eventSettings.bib_layout.date.dateFormat)" :style="{
+                                position: 'absolute',
+                                top: (eventSettings.bib_layout.date.top || 0) + '%',
+                                left: (eventSettings.bib_layout.date.left || 0) + '%',
+                                transform: 'translate(-50%, -50%)',
+                                color: eventSettings.bib_layout.date.color || '#333333',
+                                fontFamily: 'Arial, sans-serif',
+                                fontWeight: eventSettings.bib_layout.date.fontWeight || 'normal',
+                                fontSize: ((eventSettings.bib_layout.date.fontSize || 26) / 10) + 'cqw',
+                                lineHeight: 1,
+                                whiteSpace: 'nowrap',
+                                textTransform: eventSettings.bib_layout.date.textTransform || 'uppercase'
+                            }">
+                                {{ formatBibDate(runner, eventSettings.bib_layout.date.dateFormat) }}
                             </div>
                         </template>
 

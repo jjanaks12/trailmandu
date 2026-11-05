@@ -36,15 +36,21 @@ const bibEditorImageUrl = ref('')
 const isCertLayoutEditorOpen = ref(false)
 
 const bibElements = ref<LayoutElement[]>([
-    { id: 'name', label: 'Runner Name', type: 'text', demoText: 'JOHN DOE', defaultConfig: { top: '70', left: '50', fontSize: '60', color: '#000000', fontWeight: 'bold' } },
+    { id: 'name', label: 'Runner Name', type: 'text', demoText: 'JOHN DOE', defaultConfig: { top: '70', left: '50', fontSize: '60', color: '#000000', fontWeight: 'bold', textTransform: 'uppercase' } },
     { id: 'flag', label: 'Country Flag', type: 'image', defaultConfig: { top: '70', left: '80', width: '44', height: '30' } },
-    { id: 'bib', label: 'Bib Number', type: 'text', demoText: '1234', defaultConfig: { top: '85', left: '50', fontSize: '180', color: '#ffffff', fontWeight: 'bold' } }
+    { id: 'bib', label: 'Bib Number', type: 'text', demoText: '1234', defaultConfig: { top: '85', left: '50', fontSize: '180', color: '#ffffff', fontWeight: 'bold' } },
+    { id: 'distance', label: 'Distance', type: 'text', demoText: '50 KM', defaultConfig: { top: '60', left: '25', fontSize: '36', color: '#000000', fontWeight: 'bold', textTransform: 'uppercase' } },
+    { id: 'location', label: 'Location', type: 'text', demoText: 'Kathmandu, Nepal', defaultConfig: { top: '60', left: '75', fontSize: '26', color: '#333333', fontWeight: 'normal', textTransform: 'none' } },
+    { id: 'date', label: 'Event Date', type: 'text', demoText: 'Nov 05, 2026', hasDateFormat: true, defaultConfig: { top: '60', left: '50', fontSize: '26', color: '#333333', fontWeight: 'normal', dateFormat: 'MMM DD, YYYY', textTransform: 'uppercase' } }
 ])
 
 const certElements = ref<LayoutElement[]>([
-    { id: 'name', label: 'Runner Name', type: 'text', demoText: 'JOHN DOE', defaultConfig: { top: '50', left: '50', fontSize: '48', color: '#000000', fontWeight: 'bold' } },
+    { id: 'name', label: 'Runner Name', type: 'text', demoText: 'JOHN DOE', defaultConfig: { top: '50', left: '50', fontSize: '48', color: '#000000', fontWeight: 'bold', textTransform: 'uppercase' } },
     { id: 'time', label: 'Finish Time', type: 'text', demoText: '12:34:56', defaultConfig: { top: '60', left: '50', fontSize: '32', color: '#000000', fontWeight: 'normal' } },
-    { id: 'rank', label: 'Rank', type: 'text', demoText: '#1', defaultConfig: { top: '70', left: '50', fontSize: '32', color: '#000000', fontWeight: 'normal' } }
+    { id: 'rank', label: 'Rank', type: 'text', demoText: '#1', defaultConfig: { top: '70', left: '50', fontSize: '32', color: '#000000', fontWeight: 'normal' } },
+    { id: 'distance', label: 'Distance', type: 'text', demoText: '50 KM', defaultConfig: { top: '75', left: '30', fontSize: '28', color: '#000000', fontWeight: 'bold', textTransform: 'uppercase' } },
+    { id: 'location', label: 'Location', type: 'text', demoText: 'Kathmandu, Nepal', defaultConfig: { top: '75', left: '70', fontSize: '24', color: '#333333', fontWeight: 'normal', textTransform: 'none' } },
+    { id: 'date', label: 'Event Date', type: 'text', demoText: 'Nov 05, 2026', hasDateFormat: true, defaultConfig: { top: '80', left: '50', fontSize: '24', color: '#333333', fontWeight: 'normal', dateFormat: 'MMM DD, YYYY', textTransform: 'none' } }
 ])
 
 const stageCategories = computed(() => {

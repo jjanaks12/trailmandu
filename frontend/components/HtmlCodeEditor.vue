@@ -570,10 +570,18 @@ defineExpose({
     line-height: 20px !important;
     tab-size: 2 !important;
     letter-spacing: 0px !important;
+    word-spacing: 0px !important;
+    font-weight: 400 !important;
+    font-variant-ligatures: none !important;
+    font-feature-settings: normal !important;
+    -webkit-font-smoothing: antialiased !important;
+    -moz-osx-font-smoothing: grayscale !important;
+    text-rendering: auto !important;
     padding: 12px 16px !important;
     box-sizing: border-box !important;
     border: none !important;
     outline: none !important;
+    scrollbar-gutter: stable;
 }
 
 /* Word wrap modes */
@@ -613,6 +621,8 @@ defineExpose({
     line-height: 20px !important;
     tab-size: 2 !important;
     letter-spacing: 0px !important;
+    word-spacing: 0px !important;
+    font-weight: 400 !important;
     white-space: pre-wrap !important;
     word-break: break-word !important;
     overflow-wrap: break-word !important;
@@ -622,15 +632,21 @@ defineExpose({
     margin: 0 !important;
 }
 
-.code-editor-pre code,
-.code-editor-pre span,
-.code-editor-pre mark {
+:deep(.code-editor-pre) code,
+:deep(.code-editor-pre) span,
+:deep(.code-editor-pre) mark,
+.code-editor-pre :deep(code),
+.code-editor-pre :deep(span),
+.code-editor-pre :deep(mark) {
     font-family: inherit !important;
     font-size: inherit !important;
     line-height: inherit !important;
     letter-spacing: inherit !important;
+    word-spacing: inherit !important;
+    font-weight: inherit !important;
     padding: 0 !important;
     margin: 0 !important;
+    border: none !important;
     background: transparent;
 }
 

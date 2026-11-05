@@ -1,5 +1,6 @@
 <script lang="ts" setup>
 import { ref, watch, computed } from 'vue'
+import moment from 'moment'
 import {
     Dialog,
     DialogContent,
@@ -18,6 +19,7 @@ export interface LayoutElement {
     type: 'text' | 'image'
     demoText?: string
     defaultConfig: Record<string, any>
+    hasDateFormat?: boolean
 }
 
 const props = defineProps<{
@@ -47,6 +49,13 @@ watch(() => props.modelValue, (isOpen) => {
         props.elements.forEach(el => {
             if (!config.value[el.id]) {
                 config.value[el.id] = { ...el.defaultConfig }
+            } else {
+                if (el.defaultConfig?.dateFormat && !config.value[el.id].dateFormat) {
+                    config.value[el.id].dateFormat = el.defaultConfig.dateFormat
+                }
+                if (el.defaultConfig?.textTransform && !config.value[el.id].textTransform) {
+                    config.value[el.id].textTransform = el.defaultConfig.textTransform
+                }
             }
         })
     }
@@ -95,6 +104,17 @@ const save = () => {
     open.value = false
 }
 
+const getElementDisplay = (el: LayoutElement) => {
+    if (el.id === 'date' || el.hasDateFormat) {
+        const fmt = config.value[el.id]?.dateFormat || el.defaultConfig?.dateFormat || 'MMM DD, YYYY'
+        const isUpper = config.value[el.id]?.textTransform === 'uppercase'
+        const formatted = moment().format(fmt)
+        return isUpper ? formatted.toUpperCase() : formatted
+    }
+    const isUpper = config.value[el.id]?.textTransform === 'uppercase'
+    const text = el.demoText || el.label
+    return isUpper ? text.toUpperCase() : text
+}
 </script>
 
 <template>
@@ -128,10 +148,11 @@ const save = () => {
                                 width: config[el.id]?.width ? ((config[el.id].width) / 10) + 'cqw' : 'auto',
                                 height: config[el.id]?.height ? ((config[el.id].height) / 10) + 'cqw' : 'auto',
                                 background: el.type === 'image' ? 'rgba(0,0,0,0.1)' : 'transparent',
-                                fontWeight: config[el.id]?.fontWeight || 'normal'
+                                fontWeight: config[el.id]?.fontWeight || 'normal',
+                                textTransform: config[el.id]?.textTransform || (el.id === 'name' ? 'uppercase' : 'none')
                             }" @mousedown="onMouseDown($event, el.id)">
                             <template v-if="el.type === 'text'">
-                                {{ el.demoText || el.label }}
+                                {{ getElementDisplay(el) }}
                             </template>
                             <template v-else-if="el.type === 'image'">
                                 <div
@@ -173,12 +194,39 @@ const save = () => {
                                             <Label class="text-xs">Color</Label>
                                             <Input type="color" v-model="config[el.id].color" class="h-8 p-1 w-full" />
                                         </div>
-                                        <div class="space-y-2 col-span-2">
+                                        <div class="space-y-2">
                                             <Label class="text-xs">Font Weight</Label>
                                             <select v-model="config[el.id].fontWeight"
                                                 class="flex h-8 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50">
                                                 <option value="normal">Normal</option>
                                                 <option value="bold">Bold</option>
+                                            </select>
+                                        </div>
+                                        <div class="space-y-2">
+                                            <Label class="text-xs">Text Transform</Label>
+                                            <select v-model="config[el.id].textTransform"
+                                                class="flex h-8 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50">
+                                                <option value="none">Normal</option>
+                                                <option value="uppercase">UPPERCASE</option>
+                                                <option value="capitalize">Capitalize</option>
+                                                <option value="lowercase">lowercase</option>
+                                            </select>
+                                        </div>
+                                        <div v-if="el.id === 'date' || el.hasDateFormat" class="space-y-2 col-span-2">
+                                            <div class="flex items-center justify-between">
+                                                <Label class="text-xs font-semibold text-gray-700">Date Format</Label>
+                                                <span class="text-[10px] text-gray-400">Preview: {{ moment().format(config[el.id]?.dateFormat || 'MMM DD, YYYY') }}</span>
+                                            </div>
+                                            <select v-model="config[el.id].dateFormat"
+                                                class="flex h-8 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50">
+                                                <option value="MMM DD, YYYY">MMM DD, YYYY (e.g. {{ moment().format('MMM DD, YYYY') }})</option>
+                                                <option value="MMMM DD, YYYY">MMMM DD, YYYY (e.g. {{ moment().format('MMMM DD, YYYY') }})</option>
+                                                <option value="DD MMM YYYY">DD MMM YYYY (e.g. {{ moment().format('DD MMM YYYY') }})</option>
+                                                <option value="DD MMMM YYYY">DD MMMM YYYY (e.g. {{ moment().format('DD MMMM YYYY') }})</option>
+                                                <option value="YYYY-MM-DD">YYYY-MM-DD (e.g. {{ moment().format('YYYY-MM-DD') }})</option>
+                                                <option value="DD/MM/YYYY">DD/MM/YYYY (e.g. {{ moment().format('DD/MM/YYYY') }})</option>
+                                                <option value="MM/DD/YYYY">MM/DD/YYYY (e.g. {{ moment().format('MM/DD/YYYY') }})</option>
+                                                <option value="MMM YYYY">MMM YYYY (e.g. {{ moment().format('MMM YYYY') }})</option>
                                             </select>
                                         </div>
                                     </template>
