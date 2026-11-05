@@ -3,7 +3,7 @@ import { FileHandler } from "@/app/lib/services/file.service"
 import { NextFunction, Request, Response } from "express"
 
 import { prisma } from '@/app/lib/services/prisma.service'
-import { PaymentStatus, PaymentType } from "@prisma/client/index-browser"
+import { PaymentStatus, PaymentType } from "@prisma/client"
 export class PaymentController {
     public static async index(request: Request, response: Response, next: NextFunction) {
         try {

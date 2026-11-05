@@ -2,17 +2,15 @@ import { NextFunction, Request, Response } from "express"
 
 import moment from "moment"
 import createHttpError from "http-errors"
-import Bcrypt from 'bcrypt'
 import path from "node:path"
 import fs from "node:fs"
-import { APIQuery } from "@/app/lib/types"
 
 import { trailRaceRunner } from "@/app/lib/schema/event.schema"
 import { FileHandler } from "@/app/lib/services/file.service"
 import { emailQueue } from "@/queue/email.queue"
 import { prisma } from '@/app/lib/services/prisma.service'
 import { __basedir } from "@/index"
-import { PaymentMethod, PaymentStatus } from "@prisma/client/index-browser"
+import { PaymentMethod, PaymentStatus } from "@prisma/client"
 import ical, { ICalCalendarMethod } from "ical-generator"
 import { RunnerRegistrationService } from "@/app/lib/services/runner-registration.service"
 
@@ -689,12 +687,12 @@ export class RunnerController {
                 const template = await prisma.eventEmailTemplate.findUnique({
                     where: { event_id: eventId as string }
                 })
-                
+
                 if (!template) {
                     response.status(400).send('Subject and HTML template are required, and no saved template was found')
                     return
                 }
-                
+
                 finalSubject = template.subject
                 finalHtmlTemplate = template.htmlContent
                 finalVariableMap = template.variableMap as Record<string, string>
@@ -752,7 +750,7 @@ export class RunnerController {
                     'Stage Distance': stageCategory?.name || '',
                     'Event Name': event?.name || '',
                     'Event Timing': stageCategory?.start ? moment.utc(stageCategory.start).local().format('DD-MM-YYYY hh:mm a') : '',
-                    'Event Thumbnail URL': finalVariableMap?.['Event Thumbnail URL'] || '', 
+                    'Event Thumbnail URL': finalVariableMap?.['Event Thumbnail URL'] || '',
                     'Stage Image URL': finalVariableMap?.['Stage Image URL'] || ''
                 }
 
@@ -761,7 +759,7 @@ export class RunnerController {
                 for (const placeholder of mapKeys) {
                     const mappedField = finalVariableMap[placeholder]
                     const val = values[mappedField] !== undefined ? values[mappedField] : mappedField // fallback to the literal mapping value for images if it was a direct URL
-                    
+
                     // Global replace
                     const regex = new RegExp(placeholder.replace(/[.*+?^$()|[\]\\]/g, '\\$&'), 'g');
                     runnerHtml = runnerHtml.replace(regex, val)
@@ -775,7 +773,7 @@ export class RunnerController {
                         path.join(__basedir, 'uploads', 'images', fileName),
                         path.join(__basedir, 'uploads', 'files', fileName)
                     ]
-                    
+
                     let foundPath = null
                     for (const p of possiblePaths) {
                         if (fs.existsSync(p)) {

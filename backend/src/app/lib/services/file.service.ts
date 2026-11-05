@@ -6,7 +6,7 @@ import { prisma } from '@/app/lib/services/prisma.service'
 import { generateUUID } from "@/app/lib/plugins"
 import { __basedir } from "@/index"
 import moment from "moment"
-import { Image } from '@prisma/client/index-browser'
+import { Image } from '@prisma/client'
 
 type AvailableFolders = 'images' | 'vidoes' | 'gpx' | 'payments' | 'files'
 

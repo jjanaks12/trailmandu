@@ -2,7 +2,7 @@ import { seasonPassSchema, seasonPassPaymentSchema } from "@/app/lib/schema/even
 import { FileHandler } from "@/app/lib/services/file.service"
 import { NextFunction, Request, Response } from "express"
 import { prisma } from '@/app/lib/services/prisma.service'
-import { PaymentType } from "@prisma/client/index-browser"
+import { PaymentType } from "@prisma/client"
 import { Redis } from '@/app/lib/services/redis.service'
 
 export class SeasonPassController {
