@@ -396,16 +396,55 @@ export class QueueController {
     public static async promote(req: Request, res: Response, next: NextFunction) {
         try {
             const logId = req.params.id as string
+
             if (logId.startsWith('queue-')) {
                 const bullJobId = logId.replace('queue-', '')
                 const job = await emailQueue.getJob(bullJobId)
+
                 if (job) {
-                    await job.promote()
-                    res.json({ message: 'Email promoted to send immediately' })
+                    const state = await job.getState()
+
+                    // 1. If delayed in BullMQ, promote moves it into waiting queue immediately
+                    if (state === 'delayed') {
+                        await job.promote()
+                        res.json({ message: 'Delayed email promoted to send immediately' })
+                        return
+                    }
+
+                    // 2. If failed, retry it immediately
+                    if (state === 'failed') {
+                        await job.retry()
+                        res.json({ message: 'Failed email retried immediately' })
+                        return
+                    }
+
+                    // 3. If waiting or active, push to the head of the queue with top priority
+                    if (job.data) {
+                        await emailQueue.add(job.name || 'sendEmail', job.data, { priority: 1, lifo: true })
+                        if (state === 'waiting' || state === 'prioritized') {
+                            await job.remove().catch(() => {})
+                        }
+                        res.json({ message: 'Email moved to head of queue for immediate delivery' })
+                        return
+                    }
+                }
+            } else {
+                // It's a DB emailLog record
+                const emailLog = await prisma.emailLog.findUnique({
+                    where: { id: logId }
+                })
+                if (emailLog && emailLog.payload) {
+                    const payload = typeof emailLog.payload === 'string'
+                        ? JSON.parse(emailLog.payload)
+                        : emailLog.payload
+
+                    await emailQueue.add('sendEmail', payload, { priority: 1, lifo: true })
+                    res.json({ message: 'Email queued for immediate delivery' })
                     return
                 }
             }
-            res.status(404).json({ error: 'Queue job not found or cannot be promoted' })
+
+            res.status(404).json({ error: 'Queue job not found or has already finished processing' })
         } catch (error) {
             console.error('QueueController.promote error:', error)
             next(error)

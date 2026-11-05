@@ -253,11 +253,12 @@ const submitSendImmediate = async () => {
 
 const sendJobImmediately = async (log: EmailLog) => {
     try {
-        await axios.post(`/queues/${log.id}/promote`)
-        toast.success('Queued email promoted to send immediately!')
+        const { data } = await axios.post(`/queues/${log.id}/promote`)
+        toast.success(data?.message || 'Queued email scheduled to send immediately!')
         await fetchCountsAndLogs()
     } catch (e: any) {
-        toast.error(e.response?.data?.error || 'Failed to promote job')
+        const msg = e.response?.data?.error?.message || e.response?.data?.error || e.response?.data?.message || 'Failed to send email immediately'
+        toast.error(msg)
     }
 }
 
