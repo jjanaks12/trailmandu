@@ -3,26 +3,38 @@ import { NextFunction, Request, Response } from "express"
 import { prisma } from '@/app/lib/services/prisma.service'
 export class HomeController {
     public static async gallery(request: Request, response: Response, next: NextFunction) {
-        const data = await prisma.image.findMany({
-            where: {
-                galleries: {
+        try {
+            const rawTake = request.query.take ? parseInt(request.query.take as string, 10) : 10
+            const take = isNaN(rawTake) ? 10 : rawTake
+            const tags = request.query.tags
+
+            const where: any = {}
+            if (tags) {
+                const tagList = Array.isArray(tags) ? (tags as string[]) : [tags as string]
+                where.galleries = {
                     some: {
                         tags: {
                             some: {
                                 name: {
-                                    in: request.query.tags as string[]
+                                    in: tagList
                                 }
                             }
                         }
                     }
+                }
+            }
+
+            const data = await prisma.image.findMany({
+                where,
+                orderBy: {
+                    created_at: 'desc'
                 },
-            },
-            orderBy: {
-                created_at: 'desc'
-            },
-            take: parseInt(request.query.take as string) ?? 10
-        })
-        response.json(data)
+                take
+            })
+            response.json(data)
+        } catch (error) {
+            next(error)
+        }
     }
 
     public static async heroSlider(request: Request, response: Response, next: NextFunction) {
