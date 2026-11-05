@@ -402,5 +402,14 @@ export class RunnerRegistrationService {
             },
             category: "event"
         })
+
+        await prisma.emailLog.create({
+            data: {
+                recipient: validationData.email,
+                subject: "Thank you for signing up for race",
+                status: "SUCCESS",
+                payload: { type: "registration", runner_id: runner.id }
+            }
+        }).catch(err => console.error("Failed to log registration email:", err))
     }
 }

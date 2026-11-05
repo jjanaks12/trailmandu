@@ -228,6 +228,8 @@ export type EventRunner = {
     runner_attendances: RunnerAttendance[]
     season_pass_id?: string
     season_pass?: SeasonPass
+    email_sent?: boolean
+    email_sent_at?: string | null
 }
 
 export type RunnerAttendance = {

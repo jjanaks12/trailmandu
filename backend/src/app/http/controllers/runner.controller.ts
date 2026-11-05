@@ -106,7 +106,46 @@ export class RunnerController {
                     }
                 }]
             })
-            response.send(runners)
+
+            // Attach email sent status from email_logs
+            const runnerEmails = runners.map(r => r.personal?.email).filter(Boolean) as string[]
+            const emailLogs = runnerEmails.length > 0 ? await prisma.emailLog.findMany({
+                where: {
+                    recipient: { in: runnerEmails },
+                    status: 'SUCCESS'
+                },
+                select: {
+                    recipient: true,
+                    created_at: true
+                },
+                orderBy: {
+                    created_at: 'desc'
+                }
+            }) : []
+
+            const sentEmailMap = new Map<string, Date>()
+            for (const log of emailLogs) {
+                if (!sentEmailMap.has(log.recipient)) {
+                    sentEmailMap.set(log.recipient, log.created_at)
+                }
+            }
+
+            let result = runners.map(runner => {
+                const emailSentAt = runner.personal?.email ? sentEmailMap.get(runner.personal.email) : null
+                return {
+                    ...runner,
+                    email_sent: Boolean(emailSentAt),
+                    email_sent_at: emailSentAt
+                }
+            })
+
+            if (request.query.email_sent === 'true') {
+                result = result.filter(r => r.email_sent)
+            } else if (request.query.email_sent === 'false') {
+                result = result.filter(r => !r.email_sent)
+            }
+
+            response.send(result)
         } catch (error) {
             next(error)
         }
@@ -667,6 +706,15 @@ export class RunnerController {
                 category: 'event'
             })
 
+            await prisma.emailLog.create({
+                data: {
+                    recipient: personal.email,
+                    subject: 'Welcome to Trailmandu',
+                    status: 'SUCCESS',
+                    payload: { type: 'confirmation', runner_id: runner.id }
+                }
+            }).catch(err => console.error('Failed to log email:', err))
+
             response.send('Confirmation email queued')
         } catch (error) {
             next(error)
@@ -800,6 +848,15 @@ export class RunnerController {
                     category: 'event_mass_email',
                     attachments
                 })
+
+                await prisma.emailLog.create({
+                    data: {
+                        recipient: personal.email,
+                        subject: finalSubject,
+                        status: 'SUCCESS',
+                        payload: { type: 'event_mass_email', event_id: eventId, runner_id: runner.id }
+                    }
+                }).catch(err => console.error('Failed to log email:', err))
 
                 queuedCount++;
             }

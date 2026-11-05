@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CheckIcon, ChevronUpIcon, CopyIcon, EllipsisVerticalIcon } from 'lucide-vue-next'
+import { CheckIcon, ChevronUpIcon, CopyIcon, EllipsisVerticalIcon, MailCheckIcon, MailXIcon } from 'lucide-vue-next'
 import moment from 'moment'
 import { humanize } from '~/lib/filters'
 import { getDuration } from '~/lib/filters/runner'
@@ -110,7 +110,7 @@ const sendConfirmationEmail = async () => {
                         <CheckIcon class="size-2" v-else />
                     </Button>
                 </em>
-                <div class="flex gap-2 mb-1">
+                <div class="flex gap-2 mb-1 flex-wrap items-center">
                     <Badge>
                         {{ moment().diff(moment(runner.personal.date_of_birth), 'years') }}
                         {{ runner.personal?.gender?.name.charAt(0).toUpperCase() }}
@@ -118,6 +118,14 @@ const sendConfirmationEmail = async () => {
                     <Badge variant="info">
                         <span class="font-normal opacity-55">Stage Category:</span>
                         {{ runner.stage_category.name }}
+                    </Badge>
+                    <Badge v-if="runner.email_sent" variant="success" class="text-xs">
+                        <MailCheckIcon class="size-3 mr-1 inline" />
+                        Email Sent
+                    </Badge>
+                    <Badge v-else variant="outline" class="text-xs text-gray-400">
+                        <MailXIcon class="size-3 mr-1 inline" />
+                        Email Not Sent
                     </Badge>
                 </div>
                 <div class="flex gap-2 items-center">
