@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { toast } from 'vue-sonner'
 import { SendIcon } from 'lucide-vue-next'
@@ -7,13 +7,10 @@ import { useForm, useField } from 'vee-validate'
 import * as yup from 'yup'
 import ClearCacheButton from '@/components/pages/dashboard/event/ClearCacheButton.vue'
 import EventSidebar from '@/components/pages/dashboard/event/sidebar.vue'
-import type { TrailRace, Stage } from '~/lib/types'
+import type { TrailRace } from '~/lib/types'
 import { useEventStore } from '~/store/event'
 import { useStageStore } from '~/store/stage'
-import { useMediaStore } from '~/store/media'
-import { useAuthStore } from '~/store/auth'
 import { useAxios } from '~/services/axios'
-import { useRuntimeConfig } from '#app'
 
 definePageMeta({
     layout: 'admin',
@@ -22,28 +19,17 @@ definePageMeta({
 })
 
 const route = useRoute()
+const eventId = route.params.id as string
 const { get: getEvent } = useEventStore()
 const { fetch: fetchStages, stages } = useStageStore()
-const mediaStore = useMediaStore()
-const { media } = storeToRefs(mediaStore)
 const { axios } = useAxios()
-const config = useRuntimeConfig()
-const authStore = useAuthStore()
 
-const testEmailDialogOpen = ref(false)
-const testEmailRecipient = ref('')
-const testEmailStageId = ref('')
-const isSendingTestEmail = ref(false)
-
-const openTestEmailDialog = () => {
-    if (!testEmailRecipient.value) {
-        testEmailRecipient.value = authStore.user?.personal?.email || ''
-    }
-    testEmailDialogOpen.value = true
-}
-
-const eventId = route.params.id as string
 const trailRace = ref<TrailRace | null>(null)
+const attachStageGpx = ref(false)
+const isLoading = ref(false)
+const activeTab = ref('preview')
+const iframeRef = ref<HTMLIFrameElement | null>(null)
+const codeEditorRef = ref<any>(null)
 
 // Form state
 const schema = yup.object({
@@ -61,294 +47,54 @@ const { handleSubmit } = useForm({
 
 const { value: subject, errorMessage: subjectError } = useField<string>('subject')
 const { value: htmlContent, errorMessage: htmlContentError } = useField<string>('htmlContent')
-const attachStageGpx = ref(false)
-const isLoading = ref(false)
-const activeTab = ref('preview')
-const iframeRef = ref<HTMLIFrameElement | null>(null)
-const codeEditorRef = ref<any>(null)
 
-const previewHtml = computed(() => {
-    if (!htmlContent.value) return ''
-    return htmlContent.value + `
-    <style>
-        #_var_tooltip {
-            position: absolute;
-            background: #111827;
-            color: white;
-            border-radius: 4px;
-            font-size: 12px;
-            cursor: pointer;
-            display: none;
-            z-index: 99999;
-            font-family: system-ui, sans-serif;
-            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
-            overflow: hidden;
-        }
-        .tooltip-btn {
-            padding: 6px 10px;
-        }
-        .tooltip-btn:hover {
-            background: #374151;
-        }
-        ._preview_text_editable {
-            transition: outline 0.15s ease, background-color 0.15s ease;
-            border-radius: 2px;
-        }
-        ._preview_text_editable:hover {
-            outline: 1.5px dashed #3b82f6 !important;
-            cursor: text !important;
-        }
-        ._preview_text_editable:focus {
-            outline: 2px solid #2563eb !important;
-            background-color: rgba(59, 130, 246, 0.06) !important;
-        }
-    </style>
-    <div id="_var_tooltip"></div>
-    <script>
-        let currentSelection = '';
-        document.addEventListener('selectionchange', () => {
-            const selection = window.getSelection();
-            const tooltip = document.getElementById('_var_tooltip');
-            currentSelection = selection ? selection.toString().trim() : '';
-            if (currentSelection.length > 0) {
-                try {
-                    const range = selection.getRangeAt(0);
-                    const rect = range.getBoundingClientRect();
-                    tooltip.innerHTML = '<div class="tooltip-btn" onmousedown="createVar(event)">Make Variable</div>';
-                    tooltip.style.display = 'block';
-                    tooltip.style.flexDirection = 'row';
-                    tooltip.style.top = (rect.top + window.scrollY - 30) + 'px';
-                    tooltip.style.left = (rect.left + window.scrollX + (rect.width / 2) - (tooltip.offsetWidth / 2)) + 'px';
-                } catch(e) {}
-            }
-        });
-        
-        document.addEventListener('click', (e) => {
-            const tooltip = document.getElementById('_var_tooltip');
-            if (e.target.tagName === 'IMG') {
-                e.preventDefault();
-                window.currentImageSrc = e.target.getAttribute('src');
-                const rect = e.target.getBoundingClientRect();
-                tooltip.style.display = 'flex';
-                tooltip.style.flexDirection = 'column';
-                tooltip.innerHTML = '<div class="tooltip-btn" onmousedown="imgAction(event, \\'variable\\')">Make Variable</div><div class="tooltip-btn" onmousedown="imgAction(event, \\'upload\\')">Change Image</div>';
-                
-                tooltip.style.top = (rect.top + window.scrollY + (rect.height / 2) - (tooltip.offsetHeight / 2)) + 'px';
-                tooltip.style.left = (rect.left + window.scrollX + (rect.width / 2) - (tooltip.offsetWidth / 2)) + 'px';
-            } else if (!tooltip.contains(e.target)) {
-                if (currentSelection.length === 0) {
-                    tooltip.style.display = 'none';
-                }
-            }
-        });
+// Composables
+const {
+    localImages,
+    variables,
+    availableMappings,
+    parseTemplate,
+    handleTemplateUpload: onUploadTemplate,
+    buildVariableMap,
+    replaceLocalImages
+} = useEmailTemplateParser()
 
-        // Prevent links from navigating away inside preview
-        document.addEventListener('click', (e) => {
-            const link = e.target.closest('a');
-            if (link) {
-                e.preventDefault();
-            }
-        });
+const handleTemplateUpload = (e: Event) => {
+    onUploadTemplate(e, (text) => {
+        htmlContent.value = text
+    })
+}
 
-        // Initialize inline text editing on leaf text elements
-        function initEditableElements() {
-            const candidates = document.querySelectorAll('h1, h2, h3, h4, h5, h6, p, td, th, li, a, span, b, strong, em, i, label, div');
-            candidates.forEach(el => {
-                if (el.closest('#_var_tooltip')) return;
-
-                const hasBlockChildren = el.querySelector('p, h1, h2, h3, h4, h5, h6, table, ul, ol, div');
-                if (!hasBlockChildren && el.innerText && el.innerText.trim().length > 0) {
-                    el.setAttribute('contenteditable', 'plaintext-only');
-                    el.classList.add('_preview_text_editable');
-
-                    let originalText = '';
-                    el.addEventListener('focus', () => {
-                        originalText = el.innerText;
-                    });
-
-                    el.addEventListener('blur', () => {
-                        const currentText = el.innerText;
-                        if (currentText !== originalText && originalText.trim().length > 0) {
-                            window.parent.postMessage({
-                                type: 'TEXT_EDITED',
-                                oldText: originalText,
-                                newText: currentText
-                            }, '*');
-                            originalText = currentText;
-                        }
-                    });
-
-                    if (['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'a', 'span', 'strong', 'em', 'b', 'i', 'label'].includes(el.tagName.toLowerCase())) {
-                        el.addEventListener('keydown', (e) => {
-                            if (e.key === 'Enter') {
-                                e.preventDefault();
-                                el.blur();
-                            }
-                        });
-                    }
-                }
-            });
-        }
-
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', initEditableElements);
-        } else {
-            initEditableElements();
-        }
-
-        function createVar(e) {
-            e.preventDefault();
-            if (currentSelection.length > 0) {
-                window.parent.postMessage({ type: 'CREATE_VAR', text: currentSelection }, '*');
-            }
-            document.getElementById('_var_tooltip').style.display = 'none';
-        }
-
-        function imgAction(e, action) {
-            e.preventDefault();
-            window.parent.postMessage({ type: 'IMAGE_ACTION', action: action, src: window.currentImageSrc }, '*');
-            document.getElementById('_var_tooltip').style.display = 'none';
-        }
-    <` + `/script>
-    `
+const {
+    previewHtml,
+    handleCodeEditorVariable,
+    handleCodeEditorKeyDown,
+    selectFromMediaLibrary
+} = useEmailTemplatePreview({
+    htmlContent,
+    activeTab,
+    codeEditorRef,
+    localImages,
+    parseTemplate
 })
 
-const createVariableWithPrompt = (selectedText: string, isCodeEditor = false) => {
-    if (!selectedText) {
-        toast.error("Please select some text first.");
-        return;
-    }
-    const varName = prompt(`Create variable for "${selectedText}"\n\nEnter variable name (e.g. first_name):`);
-    if (!varName) return;
-
-    if (isCodeEditor && codeEditorRef.value) {
-        const start = codeEditorRef.value.selectionStart;
-        const end = codeEditorRef.value.selectionEnd;
-        const before = htmlContent.value.substring(0, start);
-        const after = htmlContent.value.substring(end);
-        htmlContent.value = before + `{{${varName}}}` + after;
-        parseTemplate(htmlContent.value);
-        toast.success('Variable created!');
-    } else {
-        if (htmlContent.value.includes(selectedText)) {
-            htmlContent.value = htmlContent.value.replace(selectedText, `{{${varName}}}`);
-            parseTemplate(htmlContent.value);
-            toast.success('Variable created!');
-        } else {
-            toast.error("Could not find the exact text in the HTML source. Try selecting simpler text or use the Code Editor.");
-        }
-    }
-}
-
-const handleCodeEditorVariable = () => {
-    if (codeEditorRef.value) {
-        const start = codeEditorRef.value.selectionStart;
-        const end = codeEditorRef.value.selectionEnd;
-        if (start !== end) {
-            const selectedText = htmlContent.value.substring(start, end);
-            createVariableWithPrompt(selectedText, true);
-        } else {
-            toast.error("Please select some text in the Code Editor first.");
-        }
-    }
-}
-
-const handleCodeEditorKeyDown = (e: KeyboardEvent) => {
-    // Allow Tab key to indent with 2 spaces instead of leaving textarea
-    if (e.key === 'Tab' && codeEditorRef.value) {
-        e.preventDefault()
-        const textarea = codeEditorRef.value
-        const start = textarea.selectionStart
-        const end = textarea.selectionEnd
-        const val = htmlContent.value
-        htmlContent.value = val.substring(0, start) + '  ' + val.substring(end)
-        nextTick(() => {
-            textarea.selectionStart = textarea.selectionEnd = start + 2
-        })
-    }
-}
-
-const replaceImageSrc = (oldSrc: string, newSrc: string) => {
-    if (!oldSrc) return;
-    if (htmlContent.value.includes(`src="${oldSrc}"`)) {
-        htmlContent.value = htmlContent.value.replace(`src="${oldSrc}"`, `src="${newSrc}"`);
-    } else if (htmlContent.value.includes(`src='${oldSrc}'`)) {
-        htmlContent.value = htmlContent.value.replace(`src='${oldSrc}'`, `src='${newSrc}'`);
-    } else {
-        htmlContent.value = htmlContent.value.replace(oldSrc, newSrc);
-    }
-    parseTemplate(htmlContent.value);
-}
-
-const selectImageForSrc = (src: string) => {
-    media.value.show = true
-    media.value.mode = 'image'
-    media.value.isMultiple = false
-    media.value.action = async (state: any) => {
-        if (media.value.selectedImages && media.value.selectedImages.length > 0) {
-            const selectedImageId = media.value.selectedImages[0]
-            try {
-                const image = await mediaStore.fetchImage(selectedImageId)
-                const newUrl = `${config.public.serverUrl}resources/images/${image.file_name}`
-                replaceImageSrc(src, newUrl);
-                toast.success('Image replaced successfully!')
-            } catch (error) {
-                toast.error('Failed to fetch image details')
-            }
-        }
-        media.value.show = false
-    }
-}
-
-const handleIframeMessage = (e: MessageEvent) => {
-    if (!e.data) return;
-    if (e.data.type === 'CREATE_VAR') {
-        createVariableWithPrompt(e.data.text.trim())
-    } else if (e.data.type === 'IMAGE_ACTION') {
-        const src = e.data.src;
-        if (e.data.action === 'variable') {
-            const varName = prompt(`Create variable for image source\n\nEnter variable name (e.g. hero_image):`);
-            if (varName) {
-                replaceImageSrc(src, `{{${varName}}}`);
-                toast.success('Image variable created!');
-            }
-        } else if (e.data.action === 'upload') {
-            selectImageForSrc(src);
-        }
-    } else if (e.data.type === 'TEXT_EDITED') {
-        const { oldText, newText } = e.data
-        if (oldText && newText !== undefined && oldText !== newText) {
-            if (htmlContent.value.includes(oldText)) {
-                htmlContent.value = htmlContent.value.replace(oldText, newText)
-                parseTemplate(htmlContent.value)
-                toast.success('Text updated in template!')
-            } else {
-                const trimmedOld = oldText.trim()
-                if (htmlContent.value.includes(trimmedOld)) {
-                    htmlContent.value = htmlContent.value.replace(trimmedOld, newText.trim())
-                    parseTemplate(htmlContent.value)
-                    toast.success('Text updated in template!')
-                } else {
-                    toast.error('Could not find the exact text in template HTML. Use the Code Editor to edit.')
-                }
-            }
-        }
-    }
-}
-
-// Parsed template state
-const localImages = ref<{ src: string, uploadedUrl: string | null, file: File | null }[]>([])
-const variables = ref<{ name: string, mappedTo: string }[]>([])
-
-const availableMappings = [
-    'First Name', 'Last Name', 'Full Name', 'Email', 'BIB Number',
-    'Country', 'Gender', 'Stage Category Name', 'Stage Distance',
-    'GPX File', 'GPX File URL', 'Event Name', 'Event Timing',
-    'Event Thumbnail URL', 'Stage Image URL'
-]
+const {
+    testEmailDialogOpen,
+    testEmailRecipient,
+    testEmailStageId,
+    isSendingTestEmail,
+    openTestEmailDialog,
+    sendTestEmail
+} = useEmailTemplateTest({
+    eventId,
+    subject,
+    htmlContent,
+    variables,
+    localImages,
+    attachStageGpx
+})
 
 onMounted(async () => {
-    window.addEventListener('message', handleIframeMessage)
     trailRace.value = await getEvent(eventId)
     await fetchStages(eventId)
 
@@ -376,79 +122,7 @@ onMounted(async () => {
     }
 })
 
-onUnmounted(() => {
-    window.removeEventListener('message', handleIframeMessage)
-})
-
-const handleTemplateUpload = (e: Event) => {
-    const file = (e.target as HTMLInputElement).files?.[0]
-    if (!file) return
-
-    const reader = new FileReader()
-    reader.onload = (e) => {
-        const text = e.target?.result as string
-        htmlContent.value = text
-        parseTemplate(text)
-        toast.success('Template loaded successfully!')
-    }
-    reader.readAsText(file)
-}
-
-const parseTemplate = (html: string) => {
-    // 1. Find local images
-    localImages.value = []
-    const imgRegex = /<img[^>]+src="([^">]+)"/g
-    let match
-    while ((match = imgRegex.exec(html)) !== null) {
-        const src = match[1]
-        // If not absolute and not data URI
-        if (!src.startsWith('http') && !src.startsWith('data:')) {
-            if (!localImages.value.find(i => i.src === src)) {
-                localImages.value.push({ src, uploadedUrl: null, file: null })
-            }
-        }
-    }
-
-    // 2. Find variables {{something}}
-    const existingVars = [...variables.value]
-    variables.value = []
-    const varRegex = /\{\{([^}]+)\}\}/g
-    while ((match = varRegex.exec(html)) !== null) {
-        const varName = match[1].trim()
-        if (!variables.value.find(v => v.name === varName)) {
-            const existing = existingVars.find(v => v.name === varName)
-            if (existing) {
-                variables.value.push(existing)
-            } else {
-                // Auto-guess mapping if possible, otherwise empty
-                let guessed = ''
-                const lower = varName.toLowerCase()
-                if (lower.includes('first')) guessed = 'First Name'
-                else if (lower.includes('last')) guessed = 'Last Name'
-                else if (lower.includes('name')) guessed = 'Full Name'
-                else if (lower.includes('bib')) guessed = 'BIB Number'
-                else if (lower.includes('country')) guessed = 'Country'
-                else if (lower.includes('gender')) guessed = 'Gender'
-                else if (lower.includes('event')) guessed = 'Event Name'
-                else if (lower.includes('time') || lower.includes('date')) guessed = 'Event Timing'
-                else if (lower.includes('gpx') || lower.includes('map_file')) guessed = 'GPX File'
-                else if (lower.includes('category') || (lower.includes('stage') && lower.includes('name'))) guessed = 'Stage Category Name'
-                else if (lower.includes('distance') || lower.includes('dist')) guessed = 'Stage Distance'
-
-                variables.value.push({ name: varName, mappedTo: guessed })
-            }
-        }
-    }
-}
-
-const selectFromMediaLibrary = (index: number) => {
-    if (localImages.value[index]) {
-        selectImageForSrc(localImages.value[index].src);
-    }
-}
-
 const saveTemplate = handleSubmit(async (values) => {
-
     // Check if any variables are unmapped
     if (variables.value.some(v => !v.mappedTo)) {
         return toast.error('Please map all variables before saving')
@@ -462,20 +136,8 @@ const saveTemplate = handleSubmit(async (values) => {
     try {
         isLoading.value = true
 
-        // Replace image srcs in HTML
-        let processedHtml = values.htmlContent
-        localImages.value.forEach(img => {
-            if (img.uploadedUrl) {
-                // simple string replace for the exact src
-                processedHtml = processedHtml.replace(new RegExp(`src="${img.src}"`, 'g'), `src="${img.uploadedUrl}"`)
-            }
-        })
-
-        // Build variable map
-        const variableMap: Record<string, string> = {}
-        variables.value.forEach(v => {
-            variableMap[`{{${v.name}}}`] = v.mappedTo
-        })
+        const processedHtml = replaceLocalImages(values.htmlContent)
+        const variableMap = buildVariableMap()
 
         const payload = {
             subject: values.subject,
@@ -484,7 +146,7 @@ const saveTemplate = handleSubmit(async (values) => {
             attachStageGpx: attachStageGpx.value
         }
 
-        const { data } = await axios.post(`/events/${eventId}/email-template`, payload)
+        await axios.post(`/events/${eventId}/email-template`, payload)
         toast.success('Template saved successfully!')
 
         // Update htmlContent to the processed one so uploaded images stay
@@ -496,65 +158,6 @@ const saveTemplate = handleSubmit(async (values) => {
         isLoading.value = false
     }
 })
-
-const sendTestEmail = async () => {
-    if (!testEmailRecipient.value || !testEmailRecipient.value.trim()) {
-        toast.error('Please enter a recipient email address')
-        return
-    }
-
-    if (!subject.value) {
-        toast.error('Please enter a subject first')
-        return
-    }
-
-    if (!htmlContent.value) {
-        toast.error('Please provide HTML template content')
-        return
-    }
-
-    // Check if any variables are unmapped
-    if (variables.value.some(v => !v.mappedTo)) {
-        return toast.error('Please map all variables before sending a test email')
-    }
-
-    // Check if any local images are not uploaded
-    if (localImages.value.some(i => !i.uploadedUrl)) {
-        return toast.error('Please upload or replace all local images before sending a test email')
-    }
-
-    try {
-        isSendingTestEmail.value = true
-
-        const variableMap: Record<string, string> = {}
-        variables.value.forEach(v => {
-            variableMap[`{{${v.name}}}`] = v.mappedTo
-        })
-
-        let processedHtml = htmlContent.value
-        localImages.value.forEach(img => {
-            if (img.uploadedUrl) {
-                processedHtml = processedHtml.replace(img.src, img.uploadedUrl)
-            }
-        })
-
-        await axios.post(`/events/${eventId}/email-template/test`, {
-            testEmail: testEmailRecipient.value.trim(),
-            subject: subject.value,
-            htmlTemplate: processedHtml,
-            variableMap,
-            attachStageGpx: attachStageGpx.value,
-            stageId: testEmailStageId.value || undefined
-        })
-
-        toast.success(`Test email sent to ${testEmailRecipient.value.trim()}`)
-        testEmailDialogOpen.value = false
-    } catch (err: any) {
-        toast.error(err.response?.data?.error || err.response?.data?.message || 'Failed to send test email')
-    } finally {
-        isSendingTestEmail.value = false
-    }
-}
 </script>
 
 <template>
@@ -604,7 +207,7 @@ const sendTestEmail = async () => {
                         <input type="file" accept=".html,.htm" @change="handleTemplateUpload"
                             class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20 cursor-pointer">
                         <span v-if="htmlContentError" class="text-xs text-red-500 mt-1 block">{{ htmlContentError
-                        }}</span>
+                            }}</span>
                     </div>
 
                     <div v-if="htmlContent" class="space-y-6 pt-4 border-t">
@@ -630,8 +233,13 @@ const sendTestEmail = async () => {
                                     </button>
                                 </div>
                                 <div v-else class="text-sm text-gray-500 flex items-center gap-2 px-2">
-                                    <span class="inline-flex items-center gap-1.5 bg-blue-50 text-blue-700 px-2.5 py-1 rounded text-xs font-medium border border-blue-200">
-                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                                    <span
+                                        class="inline-flex items-center gap-1.5 bg-blue-50 text-blue-700 px-2.5 py-1 rounded text-xs font-medium border border-blue-200">
+                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z">
+                                            </path>
+                                        </svg>
                                         Click any text to edit directly
                                     </span>
                                     <span class="text-xs text-gray-400">·</span>

@@ -805,6 +805,7 @@ export class RunnerController {
                     'GPX File': gpxFileUrl,
                     'GPX File URL': gpxFileUrl,
                     'Event Name': event?.name || '',
+                    'Event Address': stageCategory?.location || stageCategory?.stage?.location || '',
                     'Event Timing': stageCategory?.start ? moment.utc(stageCategory.start).local().format('DD-MM-YYYY hh:mm a') : '',
                     'Event Thumbnail URL': finalVariableMap?.['Event Thumbnail URL'] || '',
                     'Stage Image URL': finalVariableMap?.['Stage Image URL'] || ''

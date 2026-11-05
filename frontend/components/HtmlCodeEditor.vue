@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { ref, computed, watch, nextTick } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import hljs from 'highlight.js'
 import {
     SearchIcon,
@@ -7,6 +7,7 @@ import {
     Minimize2Icon,
     ChevronUpIcon,
     ChevronDownIcon,
+    WrapTextIcon,
     XIcon
 } from 'lucide-vue-next'
 
@@ -14,10 +15,12 @@ const props = withDefaults(defineProps<{
     modelValue: string
     placeholder?: string
     theme?: 'dark' | 'light'
+    wordWrap?: boolean
 }>(), {
     modelValue: '',
     placeholder: 'Enter HTML template here...',
-    theme: 'dark'
+    theme: 'dark',
+    wordWrap: true
 })
 
 const emit = defineEmits<{
@@ -27,6 +30,7 @@ const emit = defineEmits<{
 }>()
 
 const activeTheme = ref<'dark' | 'light'>(props.theme)
+const isWordWrap = ref(props.wordWrap)
 const isFullscreen = ref(false)
 const showFind = ref(false)
 const searchQuery = ref('')
@@ -37,10 +41,46 @@ const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const preRef = ref<HTMLPreElement | null>(null)
 const gutterRef = ref<HTMLDivElement | null>(null)
 const searchInputRef = ref<HTMLInputElement | null>(null)
+const measureRef = ref<HTMLDivElement | null>(null)
+const lineHeights = ref<number[]>([])
+
+const rawLines = computed(() => {
+    return (props.modelValue || '').split('\n')
+})
 
 const lineCount = computed(() => {
-    return (props.modelValue || '').split('\n').length
+    return rawLines.value.length
 })
+
+let rafId: number | null = null
+const updateLineHeights = () => {
+    if (typeof window === 'undefined') return
+    if (rafId) cancelAnimationFrame(rafId)
+    rafId = requestAnimationFrame(() => {
+        if (!isWordWrap.value || !textareaRef.value || !measureRef.value) {
+            lineHeights.value = []
+            return
+        }
+        const contentWidth = textareaRef.value.clientWidth - 32
+        if (contentWidth <= 0) return
+
+        measureRef.value.style.width = contentWidth + 'px'
+        const children = measureRef.value.children
+        const heights: number[] = new Array(children.length)
+        for (let i = 0; i < children.length; i++) {
+            heights[i] = (children[i] as HTMLElement).offsetHeight || 20
+        }
+        lineHeights.value = heights
+    })
+}
+
+const toggleWordWrap = () => {
+    isWordWrap.value = !isWordWrap.value
+    nextTick(() => {
+        updateLineHeights()
+        syncScroll()
+    })
+}
 
 interface MatchRange {
     start: number
@@ -137,26 +177,48 @@ const closeFind = () => {
 const nextMatch = () => {
     if (matches.value.length === 0) return
     activeMatchIndex.value = (activeMatchIndex.value + 1) % matches.value.length
-    scrollToMatch(matches.value[activeMatchIndex.value])
+    scrollToMatch(matches.value[activeMatchIndex.value], false)
 }
 
 const prevMatch = () => {
     if (matches.value.length === 0) return
     activeMatchIndex.value = (activeMatchIndex.value - 1 + matches.value.length) % matches.value.length
-    scrollToMatch(matches.value[activeMatchIndex.value])
+    scrollToMatch(matches.value[activeMatchIndex.value], false)
 }
 
-const scrollToMatch = (match: MatchRange) => {
+const scrollToMatch = (match: MatchRange, shouldFocus = false) => {
     if (!textareaRef.value || !match) return
-    textareaRef.value.focus()
+    
+    // Check if user is currently typing in the search input
+    const isSearchFocused = typeof document !== 'undefined' && document.activeElement === searchInputRef.value
+
+    if (shouldFocus && !isSearchFocused) {
+        textareaRef.value.focus()
+    }
     textareaRef.value.setSelectionRange(match.start, match.end)
 
-    // Calculate approximate vertical line offset to scroll into view
+    // Calculate vertical offset to scroll match into view
     const textBefore = props.modelValue.substring(0, match.start)
     const lineIndex = textBefore.split('\n').length - 1
-    const targetScrollTop = Math.max(0, lineIndex * 20 - 120) // 20px is line-height
+
+    let targetScrollTop = 0
+    if (isWordWrap.value && lineHeights.value.length > lineIndex) {
+        let acc = 0
+        for (let i = 0; i < lineIndex; i++) {
+            acc += lineHeights.value[i] || 20
+        }
+        targetScrollTop = Math.max(0, acc - 120)
+    } else {
+        targetScrollTop = Math.max(0, lineIndex * 20 - 120)
+    }
+
     textareaRef.value.scrollTop = targetScrollTop
     syncScroll()
+
+    // Ensure search input never loses focus when typing or navigating matches
+    if (isSearchFocused && searchInputRef.value) {
+        searchInputRef.value.focus()
+    }
 }
 
 watch(matches, (newMatches) => {
@@ -164,7 +226,7 @@ watch(matches, (newMatches) => {
         if (activeMatchIndex.value >= newMatches.length) {
             activeMatchIndex.value = 0
         }
-        scrollToMatch(newMatches[activeMatchIndex.value])
+        scrollToMatch(newMatches[activeMatchIndex.value], false)
     } else {
         activeMatchIndex.value = 0
     }
@@ -172,7 +234,10 @@ watch(matches, (newMatches) => {
 
 const toggleFullscreen = () => {
     isFullscreen.value = !isFullscreen.value
-    nextTick(syncScroll)
+    nextTick(() => {
+        syncScroll()
+        updateLineHeights()
+    })
 }
 
 const handleKeyDown = (e: KeyboardEvent) => {
@@ -180,6 +245,13 @@ const handleKeyDown = (e: KeyboardEvent) => {
     if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) {
         e.preventDefault()
         openFind()
+        return
+    }
+
+    // Alt+Z to toggle Word Wrap
+    if (e.altKey && (e.key === 'z' || e.key === 'Z')) {
+        e.preventDefault()
+        toggleWordWrap()
         return
     }
 
@@ -207,9 +279,39 @@ const handleKeyDown = (e: KeyboardEvent) => {
     emit('keydown', e)
 }
 
-// Watch modelValue changes to keep scroll in sync when formatted
+// Watch modelValue changes to keep scroll and line heights in sync
 watch(() => props.modelValue, () => {
-    nextTick(syncScroll)
+    nextTick(() => {
+        syncScroll()
+        updateLineHeights()
+    })
+})
+
+watch(isWordWrap, () => {
+    nextTick(updateLineHeights)
+})
+
+let resizeObserver: ResizeObserver | null = null
+onMounted(() => {
+    nextTick(() => {
+        updateLineHeights()
+        if (textareaRef.value && typeof ResizeObserver !== 'undefined') {
+            resizeObserver = new ResizeObserver(() => {
+                updateLineHeights()
+                syncScroll()
+            })
+            resizeObserver.observe(textareaRef.value)
+        }
+    })
+})
+
+onUnmounted(() => {
+    if (resizeObserver) {
+        resizeObserver.disconnect()
+    }
+    if (rafId) {
+        cancelAnimationFrame(rafId)
+    }
 })
 
 // Expose textarea properties so parent can access selectionStart, selectionEnd, focus
@@ -221,6 +323,8 @@ defineExpose({
     focus() { textareaRef.value?.focus() },
     openFind,
     toggleFullscreen,
+    toggleWordWrap,
+    isWordWrap,
     textarea: textareaRef
 })
 </script>
@@ -229,6 +333,7 @@ defineExpose({
     <div
         :class="[
             `theme-${activeTheme}`,
+            isWordWrap ? 'code-editor-wrap' : 'code-editor-nowrap',
             isFullscreen ? 'fixed inset-0 z-[9999] w-screen h-screen rounded-none border-0' : 'relative w-full h-[600px] rounded-lg border'
         ]"
         class="code-editor-container shadow-sm overflow-hidden flex flex-col font-mono text-xs"
@@ -247,6 +352,22 @@ defineExpose({
             </div>
 
             <div class="flex items-center gap-2">
+                <!-- Word Wrap Toggle -->
+                <button
+                    type="button"
+                    @click="toggleWordWrap"
+                    class="px-2 py-0.5 rounded text-[11px] font-medium transition-colors border cursor-pointer flex items-center gap-1"
+                    :class="[
+                        isWordWrap
+                            ? (activeTheme === 'dark' ? 'bg-amber-500/20 text-amber-400 border-amber-500/40' : 'bg-primary/10 text-primary border-primary/30')
+                            : (activeTheme === 'dark' ? 'bg-[#353b45] hover:bg-[#3e4451] text-gray-200 border-gray-600' : 'bg-gray-100 hover:bg-gray-200 text-gray-700 border-gray-300')
+                    ]"
+                    :title="isWordWrap ? 'Word Wrap: On (Alt+Z)' : 'Word Wrap: Off (Alt+Z)'"
+                >
+                    <WrapTextIcon class="w-3.5 h-3.5" />
+                    <span>{{ isWordWrap ? 'Wrap: On' : 'Wrap: Off' }}</span>
+                </button>
+
                 <!-- Find Button -->
                 <button
                     type="button"
@@ -371,7 +492,14 @@ defineExpose({
                 class="code-editor-gutter select-none py-3 px-2 text-right border-r font-mono text-xs overflow-hidden shrink-0"
                 style="width: 48px; line-height: 20px;"
             >
-                <div v-for="n in lineCount" :key="n" class="opacity-40 leading-[20px]">{{ n }}</div>
+                <div
+                    v-for="(n, i) in lineCount"
+                    :key="n"
+                    class="opacity-40 leading-[20px]"
+                    :style="isWordWrap && lineHeights[i] ? { height: lineHeights[i] + 'px' } : { height: '20px' }"
+                >
+                    {{ n }}
+                </div>
             </div>
 
             <!-- Code & Textarea Area -->
@@ -394,9 +522,24 @@ defineExpose({
                     autocapitalize="off"
                     autocomplete="off"
                     :placeholder="placeholder"
-                    class="code-editor-textarea absolute inset-0 m-0 w-full h-full resize-none overflow-auto"
+                    class="code-editor-textarea absolute inset-0 m-0 w-full h-full resize-none"
                 ></textarea>
             </div>
+        </div>
+
+        <!-- Hidden container to measure wrapped line heights accurately -->
+        <div
+            v-if="isWordWrap"
+            ref="measureRef"
+            aria-hidden="true"
+            class="measure-container absolute pointer-events-none opacity-0 invisible -z-50 overflow-hidden"
+            style="left: -9999px; top: 0;"
+        >
+            <div
+                v-for="(line, idx) in rawLines"
+                :key="idx"
+                class="measure-line"
+            >{{ line ? line : '\u00A0' }}</div>
         </div>
     </div>
 </template>
@@ -410,13 +553,56 @@ defineExpose({
     line-height: 20px !important;
     tab-size: 2 !important;
     letter-spacing: 0px !important;
-    white-space: pre !important;
-    word-break: normal !important;
-    word-wrap: normal !important;
     padding: 12px 16px !important;
     box-sizing: border-box !important;
     border: none !important;
     outline: none !important;
+}
+
+/* Word wrap modes */
+.code-editor-wrap .code-editor-pre,
+.code-editor-wrap .code-editor-textarea {
+    white-space: pre-wrap !important;
+    word-break: break-word !important;
+    overflow-wrap: break-word !important;
+}
+
+.code-editor-nowrap .code-editor-pre,
+.code-editor-nowrap .code-editor-textarea {
+    white-space: pre !important;
+    word-break: normal !important;
+    overflow-wrap: normal !important;
+}
+
+.code-editor-wrap .code-editor-textarea {
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+}
+
+.code-editor-nowrap .code-editor-textarea {
+    overflow-y: auto !important;
+    overflow-x: auto !important;
+}
+
+/* Line height measurement helper */
+.measure-container {
+    box-sizing: border-box !important;
+    padding: 0 !important;
+}
+
+.measure-line {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
+    font-size: 13px !important;
+    line-height: 20px !important;
+    tab-size: 2 !important;
+    letter-spacing: 0px !important;
+    white-space: pre-wrap !important;
+    word-break: break-word !important;
+    overflow-wrap: break-word !important;
+    box-sizing: border-box !important;
+    min-height: 20px !important;
+    padding: 0 !important;
+    margin: 0 !important;
 }
 
 .code-editor-pre code {

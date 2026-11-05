@@ -616,6 +616,7 @@ export class EventController {
                 'GPX File': gpxFileUrl,
                 'GPX File URL': gpxFileUrl,
                 'Event Name': event.name || 'Trailmandu Event',
+                'Event Address': runnerStageCat?.location || runnerStageCat?.stage?.location || 'Kathmandu, Nepal',
                 'Event Timing': runnerStageCat?.start ? moment.utc(runnerStageCat.start).local().format('DD-MM-YYYY hh:mm a') : '25-12-2026 06:00 am',
                 'Event Thumbnail URL': finalVariableMap?.['Event Thumbnail URL'] || '',
                 'Stage Image URL': finalVariableMap?.['Stage Image URL'] || ''
