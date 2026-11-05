@@ -8,6 +8,7 @@ import { execSync } from 'node:child_process'
 import './alias'
 import 'dotenv/config'
 
+import '@/queue/workers/email.worker'
 import router from '@/routes'
 import { Redis } from '@/app/lib/services/redis.service'
 

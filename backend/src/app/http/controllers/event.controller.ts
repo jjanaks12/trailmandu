@@ -668,7 +668,7 @@ export class EventController {
                 data: {
                     recipient: targetEmail,
                     subject: testSubject,
-                    status: 'SUCCESS',
+                    status: 'QUEUED',
                     payload: {
                         type: 'event_test_email',
                         event_id: eventId,

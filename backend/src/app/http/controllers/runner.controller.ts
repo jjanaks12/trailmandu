@@ -864,7 +864,7 @@ export class RunnerController {
                     data: {
                         recipient: personal.email,
                         subject: finalSubject,
-                        status: 'SUCCESS',
+                        status: 'QUEUED',
                         payload: { type: 'event_mass_email', event_id: eventId, runner_id: runner.id }
                     }
                 }).catch(err => console.error('Failed to log email:', err))
