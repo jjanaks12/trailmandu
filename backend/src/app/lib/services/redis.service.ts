@@ -61,7 +61,7 @@ export abstract class Redis {
                     reject(createHttpError.InternalServerError())
                 })
 
-            resolve(value || '')
+            resolve(value ? value.toString() : '')
         })
     }
 
