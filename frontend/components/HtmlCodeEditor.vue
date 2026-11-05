@@ -435,6 +435,7 @@ defineExpose({
             <!-- Case sensitive toggle -->
             <button
                 type="button"
+                @mousedown.prevent
                 @click="searchCaseSensitive = !searchCaseSensitive"
                 class="px-1.5 py-0.5 rounded text-[10px] font-bold border transition-colors cursor-pointer"
                 :class="searchCaseSensitive ? 'bg-primary text-white border-primary' : 'opacity-60 hover:opacity-100 border-transparent'"
@@ -456,6 +457,7 @@ defineExpose({
             <!-- Prev / Next buttons -->
             <button
                 type="button"
+                @mousedown.prevent
                 @click="prevMatch"
                 :disabled="matches.length === 0"
                 class="p-1 rounded hover:bg-black/10 dark:hover:bg-white/10 disabled:opacity-30 cursor-pointer"
@@ -465,6 +467,7 @@ defineExpose({
             </button>
             <button
                 type="button"
+                @mousedown.prevent
                 @click="nextMatch"
                 :disabled="matches.length === 0"
                 class="p-1 rounded hover:bg-black/10 dark:hover:bg-white/10 disabled:opacity-30 cursor-pointer"
@@ -605,12 +608,16 @@ defineExpose({
     margin: 0 !important;
 }
 
-.code-editor-pre code {
+.code-editor-pre code,
+.code-editor-pre span,
+.code-editor-pre mark {
     font-family: inherit !important;
     font-size: inherit !important;
     line-height: inherit !important;
+    letter-spacing: inherit !important;
     padding: 0 !important;
-    background: transparent !important;
+    margin: 0 !important;
+    background: transparent;
 }
 
 .code-editor-textarea {
@@ -624,7 +631,9 @@ defineExpose({
     background-color: rgba(234, 179, 8, 0.45);
     color: inherit;
     border-radius: 2px;
-    padding: 0 1px;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
 }
 
 /* Dark Theme */
@@ -665,7 +674,6 @@ defineExpose({
 }
 .theme-dark :deep(.hljs-name) {
     color: #e06c75;
-    font-weight: 600;
 }
 .theme-dark :deep(.hljs-attr) {
     color: #d19a66;
@@ -678,13 +686,14 @@ defineExpose({
     color: #c678dd;
 }
 .theme-dark :deep(.template-var) {
-    background: rgba(245, 158, 11, 0.22);
+    background-color: rgba(245, 158, 11, 0.22);
     color: #fbbf24;
-    font-weight: 700;
-    padding: 1px 4px;
-    border-radius: 3px;
-    border: 1px solid rgba(245, 158, 11, 0.5);
-    box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+    border-radius: 2px;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+    outline: 1px solid rgba(245, 158, 11, 0.5);
+    outline-offset: 0px;
 }
 
 /* Light Theme */
@@ -725,7 +734,6 @@ defineExpose({
 }
 .theme-light :deep(.hljs-name) {
     color: #e45649;
-    font-weight: 600;
 }
 .theme-light :deep(.hljs-attr) {
     color: #986801;
@@ -738,11 +746,13 @@ defineExpose({
     color: #a626a4;
 }
 .theme-light :deep(.template-var) {
-    background: rgba(245, 158, 11, 0.18);
+    background-color: rgba(245, 158, 11, 0.18);
     color: #b45309;
-    font-weight: 700;
-    padding: 1px 4px;
-    border-radius: 3px;
-    border: 1px solid rgba(245, 158, 11, 0.4);
+    border-radius: 2px;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+    outline: 1px solid rgba(245, 158, 11, 0.4);
+    outline-offset: 0px;
 }
 </style>

@@ -801,6 +801,8 @@ export class RunnerController {
                     'Country': personal.country?.name || '',
                     'Gender': personal.gender?.name || '',
                     'Stage Distance': stageCategory?.distance || stageCategory?.name || '',
+                    'Stage Elevation': stageCategory?.elevation || '',
+                    'Elevation': stageCategory?.elevation || '',
                     'Stage Category Name': stageCategory?.name || '',
                     'GPX File': gpxFileUrl,
                     'GPX File URL': gpxFileUrl,

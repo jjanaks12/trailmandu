@@ -14,7 +14,7 @@ export interface VariableItem {
 
 export const availableMappings = [
     'First Name', 'Last Name', 'Full Name', 'Email', 'BIB Number',
-    'Country', 'Gender', 'Stage Category Name', 'Stage Distance',
+    'Country', 'Gender', 'Stage Category Name', 'Stage Distance', 'Stage Elevation',
     'GPX File', 'GPX File URL', 'Event Name', 'Event Address', 'Event Timing',
     'Event Thumbnail URL', 'Stage Image URL'
 ]
@@ -64,6 +64,7 @@ export function useEmailTemplateParser() {
                     else if (lower.includes('gpx') || lower.includes('map_file')) guessed = 'GPX File'
                     else if (lower.includes('category') || (lower.includes('stage') && lower.includes('name'))) guessed = 'Stage Category Name'
                     else if (lower.includes('distance') || lower.includes('dist')) guessed = 'Stage Distance'
+                    else if (lower.includes('elevation') || lower.includes('gain') || lower.includes('ascent') || lower.includes('elev')) guessed = 'Stage Elevation'
 
                     variables.value.push({ name: varName, mappedTo: guessed })
                 }

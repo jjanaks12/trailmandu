@@ -612,6 +612,8 @@ export class EventController {
                 'Country': sampleRunner?.personal?.country?.name || 'Nepal',
                 'Gender': sampleRunner?.personal?.gender?.name || 'Male',
                 'Stage Distance': runnerStageCat?.distance || runnerStageCat?.name || '50 km',
+                'Stage Elevation': runnerStageCat?.elevation || '2500m',
+                'Elevation': runnerStageCat?.elevation || '2500m',
                 'Stage Category Name': runnerStageCat?.name || '50K Challenge',
                 'GPX File': gpxFileUrl,
                 'GPX File URL': gpxFileUrl,
