@@ -10,6 +10,8 @@ export interface LocalImageItem {
 export interface VariableItem {
     name: string
     mappedTo: string
+    isUsed?: boolean
+    usesCount?: number
 }
 
 export const availableMappings = [
@@ -38,38 +40,69 @@ export function useEmailTemplateParser() {
             }
         }
 
-        // 2. Find variables {{something}}
-        const existingVars = [...variables.value]
-        variables.value = []
+        // 2. Count occurrences of variables {{something}}
+        const varCounts: Record<string, number> = {}
         const varRegex = /\{\{([^}]+)\}\}/g
         while ((match = varRegex.exec(html)) !== null) {
             const varName = match[1].trim()
-            if (!variables.value.find(v => v.name === varName)) {
-                const existing = existingVars.find(v => v.name === varName)
-                if (existing) {
-                    variables.value.push(existing)
-                } else {
-                    // Auto-guess mapping if possible, otherwise empty
-                    let guessed = ''
-                    const lower = varName.toLowerCase()
-                    if (lower.includes('first')) guessed = 'First Name'
-                    else if (lower.includes('last')) guessed = 'Last Name'
-                    else if (lower.includes('name')) guessed = 'Full Name'
-                    else if (lower.includes('bib')) guessed = 'BIB Number'
-                    else if (lower.includes('country')) guessed = 'Country'
-                    else if (lower.includes('gender')) guessed = 'Gender'
-                    else if (lower.includes('event') && !lower.includes('address') && !lower.includes('venue') && !lower.includes('location')) guessed = 'Event Name'
-                    else if (lower.includes('address') || lower.includes('venue') || lower.includes('location')) guessed = 'Event Address'
-                    else if (lower.includes('time') || lower.includes('date')) guessed = 'Event Timing'
-                    else if (lower.includes('gpx') || lower.includes('map_file')) guessed = 'GPX File'
-                    else if (lower.includes('category') || (lower.includes('stage') && lower.includes('name'))) guessed = 'Stage Category Name'
-                    else if (lower.includes('distance') || lower.includes('dist')) guessed = 'Stage Distance'
-                    else if (lower.includes('elevation') || lower.includes('gain') || lower.includes('ascent') || lower.includes('elev')) guessed = 'Stage Elevation'
+            varCounts[varName] = (varCounts[varName] || 0) + 1
+        }
 
-                    variables.value.push({ name: varName, mappedTo: guessed })
-                }
+        // Update existing variables and preserve them even if unused
+        const updatedVars: VariableItem[] = []
+        const seenNames = new Set<string>()
+
+        for (const v of variables.value) {
+            const count = varCounts[v.name] || 0
+            updatedVars.push({
+                ...v,
+                isUsed: count > 0,
+                usesCount: count
+            })
+            seenNames.add(v.name)
+        }
+
+        // Add newly discovered placeholders
+        for (const [varName, count] of Object.entries(varCounts)) {
+            if (!seenNames.has(varName)) {
+                let guessed = ''
+                const lower = varName.toLowerCase()
+                if (lower.includes('first')) guessed = 'First Name'
+                else if (lower.includes('last')) guessed = 'Last Name'
+                else if (lower.includes('name')) guessed = 'Full Name'
+                else if (lower.includes('bib')) guessed = 'BIB Number'
+                else if (lower.includes('country')) guessed = 'Country'
+                else if (lower.includes('gender')) guessed = 'Gender'
+                else if (lower.includes('event') && !lower.includes('address') && !lower.includes('venue') && !lower.includes('location')) guessed = 'Event Name'
+                else if (lower.includes('address') || lower.includes('venue') || lower.includes('location')) guessed = 'Event Address'
+                else if (lower.includes('time') || lower.includes('date')) guessed = 'Event Timing'
+                else if (lower.includes('gpx') || lower.includes('map_file')) guessed = 'GPX File'
+                else if (lower.includes('category') || (lower.includes('stage') && lower.includes('name'))) guessed = 'Stage Category Name'
+                else if (lower.includes('distance') || lower.includes('dist')) guessed = 'Stage Distance'
+                else if (lower.includes('elevation') || lower.includes('gain') || lower.includes('ascent') || lower.includes('elev')) guessed = 'Stage Elevation'
+
+                updatedVars.push({
+                    name: varName,
+                    mappedTo: guessed,
+                    isUsed: true,
+                    usesCount: count
+                })
+                seenNames.add(varName)
             }
         }
+
+        variables.value = updatedVars
+    }
+
+    const deleteVariable = (name: string) => {
+        const item = variables.value.find(v => v.name === name)
+        if (!item) return
+        if (item.isUsed) {
+            toast.error(`Cannot delete "{{${name}}}" because it is currently used in the template`)
+            return
+        }
+        variables.value = variables.value.filter(v => v.name !== name)
+        toast.success(`Removed unused variable "{{${name}}}"`)
     }
 
     const handleTemplateUpload = (e: Event, onLoaded: (text: string) => void) => {
@@ -109,6 +142,7 @@ export function useEmailTemplateParser() {
         variables,
         availableMappings,
         parseTemplate,
+        deleteVariable,
         handleTemplateUpload,
         buildVariableMap,
         replaceLocalImages

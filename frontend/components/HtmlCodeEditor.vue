@@ -314,6 +314,19 @@ onUnmounted(() => {
     }
 })
 
+const findText = (query: string) => {
+    searchQuery.value = query
+    showFind.value = true
+    nextTick(() => {
+        searchInputRef.value?.focus()
+        searchInputRef.value?.select()
+        if (matches.value.length > 0) {
+            activeMatchIndex.value = 0
+            scrollToMatch(matches.value[0], true)
+        }
+    })
+}
+
 // Expose textarea properties so parent can access selectionStart, selectionEnd, focus
 defineExpose({
     get selectionStart() { return textareaRef.value?.selectionStart ?? 0 },
@@ -322,6 +335,7 @@ defineExpose({
     set selectionEnd(val: number) { if (textareaRef.value) textareaRef.value.selectionEnd = val },
     focus() { textareaRef.value?.focus() },
     openFind,
+    findText,
     toggleFullscreen,
     toggleWordWrap,
     isWordWrap,

@@ -47,9 +47,9 @@ export function useEmailTemplateTest(options: EmailTemplateTestOptions) {
             return
         }
 
-        // Check if any variables are unmapped
-        if (variables.value.some(v => !v.mappedTo)) {
-            toast.error('Please map all variables before sending a test email')
+        // Check if any active variables are unmapped
+        if (variables.value.some(v => v.isUsed !== false && !v.mappedTo)) {
+            toast.error('Please map all active variables before sending a test email')
             return
         }
 

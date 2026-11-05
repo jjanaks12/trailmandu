@@ -170,6 +170,40 @@ export function useEmailTemplatePreview(options: EmailTemplatePreviewOptions) {
             window.parent.postMessage({ type: 'IMAGE_ACTION', action: action, src: window.currentImageSrc }, '*');
             document.getElementById('_var_tooltip').style.display = 'none';
         }
+
+        window.addEventListener('message', (e) => {
+            if (e.data && e.data.type === 'FIND_VARIABLE') {
+                const needle = '{{' + e.data.varName + '}}';
+                const elements = document.querySelectorAll('h1, h2, h3, h4, h5, h6, p, td, th, li, a, span, b, strong, em, i, label, div');
+                let targetEl = null;
+                for (const el of elements) {
+                    if (el.innerText && el.innerText.includes(needle)) {
+                        targetEl = el;
+                        const deeper = el.querySelectorAll('*');
+                        for (const child of deeper) {
+                            if (child.innerText && child.innerText.includes(needle)) {
+                                targetEl = child;
+                            }
+                        }
+                        break;
+                    }
+                }
+                if (targetEl) {
+                    targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    const originalOutline = targetEl.style.outline;
+                    const originalBg = targetEl.style.backgroundColor;
+                    const originalTransition = targetEl.style.transition;
+                    targetEl.style.transition = 'all 0.3s ease';
+                    targetEl.style.outline = '3px solid #f59e0b';
+                    targetEl.style.backgroundColor = 'rgba(245, 158, 11, 0.25)';
+                    setTimeout(() => {
+                        targetEl.style.outline = originalOutline;
+                        targetEl.style.backgroundColor = originalBg;
+                        targetEl.style.transition = originalTransition;
+                    }, 2500);
+                }
+            }
+        });
     <` + `/script>
     `
     })
@@ -344,6 +378,30 @@ export function useEmailTemplatePreview(options: EmailTemplatePreviewOptions) {
         }
     }
 
+    const locateVariable = (varName: string) => {
+        const placeholder = `{{${varName}}}`
+
+        // Scroll the editor into view smoothly if needed
+        if (typeof document !== 'undefined') {
+            const editorEl = document.getElementById('template-editor-container')
+            if (editorEl) {
+                editorEl.scrollIntoView({ behavior: 'smooth', block: 'start' })
+            }
+        }
+
+        if (activeTab.value === 'code') {
+            codeEditorRef.value?.findText(placeholder)
+        } else {
+            const iframe = document.querySelector('iframe[title="Email Preview"]') as HTMLIFrameElement
+            if (iframe?.contentWindow) {
+                iframe.contentWindow.postMessage({
+                    type: 'FIND_VARIABLE',
+                    varName
+                }, '*')
+            }
+        }
+    }
+
     onMounted(() => {
         window.addEventListener('message', handleIframeMessage)
     })
@@ -360,7 +418,8 @@ export function useEmailTemplatePreview(options: EmailTemplatePreviewOptions) {
         handleCodeEditorKeyDown,
         replaceImageSrc,
         selectImageForSrc,
-        selectFromMediaLibrary
+        selectFromMediaLibrary,
+        locateVariable
     }
 }
 

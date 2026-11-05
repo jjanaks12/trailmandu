@@ -1,8 +1,8 @@
 <script lang="ts" setup>
-import { ref, onMounted } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { toast } from 'vue-sonner'
-import { SendIcon } from 'lucide-vue-next'
+import { SendIcon, Trash2Icon, UploadCloudIcon, CodeIcon, SparklesIcon, FileCodeIcon, CheckIcon } from 'lucide-vue-next'
 import { useForm, useField } from 'vee-validate'
 import * as yup from 'yup'
 import ClearCacheButton from '@/components/pages/dashboard/event/ClearCacheButton.vue'
@@ -54,6 +54,7 @@ const {
     variables,
     availableMappings,
     parseTemplate,
+    deleteVariable,
     handleTemplateUpload: onUploadTemplate,
     buildVariableMap,
     replaceLocalImages
@@ -62,14 +63,92 @@ const {
 const handleTemplateUpload = (e: Event) => {
     onUploadTemplate(e, (text) => {
         htmlContent.value = text
+        rawPastedHtml.value = text
     })
+}
+
+const templateSource = ref<'upload' | 'paste'>('upload')
+const rawPastedHtml = ref('')
+
+watch(templateSource, (newSource) => {
+    if (newSource === 'paste' && !rawPastedHtml.value && htmlContent.value) {
+        rawPastedHtml.value = htmlContent.value
+    }
+})
+
+const applyPastedHtml = () => {
+    if (!rawPastedHtml.value.trim()) {
+        toast.error('Please paste or write some HTML first')
+        return
+    }
+    htmlContent.value = rawPastedHtml.value
+    parseTemplate(rawPastedHtml.value)
+    activeTab.value = 'preview'
+    toast.success('HTML template applied successfully!')
+}
+
+const startBlankTemplate = () => {
+    const starter = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>{{event_name}}</title>
+</head>
+<body style="margin: 0; padding: 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; color: #1e293b;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 8px; overflow: hidden; border: 1px solid #e2e8f0;">
+    <tr>
+      <td style="padding: 24px; background-color: #f06723; color: #ffffff;">
+        <h1 style="margin: 0; font-size: 20px;">{{event_name}}</h1>
+        <p style="margin: 4px 0 0 0; font-size: 14px; opacity: 0.9;">Runner Confirmation</p>
+      </td>
+    </tr>
+    <tr>
+      <td style="padding: 24px;">
+        <p style="margin-top: 0;">Hi <strong>{{first_name}}</strong>,</p>
+        <p>You are officially registered for <strong>{{stage_category_name}}</strong>!</p>
+        <div style="background-color: #f1f5f9; padding: 16px; border-radius: 6px; margin: 20px 0;">
+          <p style="margin: 4px 0;"><strong>BIB Number:</strong> {{bib_number}}</p>
+          <p style="margin: 4px 0;"><strong>Distance:</strong> {{stage_distance}}</p>
+          <p style="margin: 4px 0;"><strong>Elevation:</strong> {{stage_elevation}}</p>
+          <p style="margin: 4px 0;"><strong>Venue / Address:</strong> {{event_address}}</p>
+        </div>
+        <p>See you at the starting line!</p>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`
+    rawPastedHtml.value = starter
+    htmlContent.value = starter
+    parseTemplate(starter)
+    activeTab.value = 'code'
+    toast.success('Starter template loaded into editor')
+}
+
+const startEmptyTemplate = () => {
+    const empty = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+</head>
+<body style="font-family: sans-serif; padding: 20px;">
+  <h2>Hello {{first_name}},</h2>
+  <p>Welcome to {{event_name}}!</p>
+</body>
+</html>`
+    rawPastedHtml.value = empty
+    htmlContent.value = empty
+    parseTemplate(empty)
+    activeTab.value = 'code'
+    toast.success('Blank HTML template ready in editor')
 }
 
 const {
     previewHtml,
     handleCodeEditorVariable,
     handleCodeEditorKeyDown,
-    selectFromMediaLibrary
+    selectFromMediaLibrary,
+    locateVariable
 } = useEmailTemplatePreview({
     htmlContent,
     activeTab,
@@ -104,15 +183,25 @@ onMounted(async () => {
         if (data) {
             subject.value = data.subject
             htmlContent.value = data.htmlContent || ''
+            rawPastedHtml.value = data.htmlContent || ''
             attachStageGpx.value = data.attachStageGpx || false
             parseTemplate(data.htmlContent || '')
 
             // Restore variable mappings
             if (data.variableMap) {
-                variables.value.forEach(v => {
-                    const key = `{{${v.name}}}`
-                    if (data.variableMap[key]) {
-                        v.mappedTo = data.variableMap[key]
+                Object.entries(data.variableMap).forEach(([key, mappedField]) => {
+                    const cleanName = key.replace(/^\{\{|\}\}$/g, '').trim()
+                    const existing = variables.value.find(v => v.name === cleanName)
+                    if (existing) {
+                        existing.mappedTo = mappedField as string
+                    } else {
+                        // Previously saved variable not found in current template HTML
+                        variables.value.push({
+                            name: cleanName,
+                            mappedTo: mappedField as string,
+                            isUsed: false,
+                            usesCount: 0
+                        })
                     }
                 })
             }
@@ -123,9 +212,9 @@ onMounted(async () => {
 })
 
 const saveTemplate = handleSubmit(async (values) => {
-    // Check if any variables are unmapped
-    if (variables.value.some(v => !v.mappedTo)) {
-        return toast.error('Please map all variables before saving')
+    // Check if any active variables are unmapped
+    if (variables.value.some(v => v.isUsed !== false && !v.mappedTo)) {
+        return toast.error('Please map all active variables before saving')
     }
 
     // Check if any local images are not uploaded
@@ -247,16 +336,18 @@ const saveTemplate = handleSubmit(async (values) => {
                                 </div>
                             </div>
 
-                            <div v-if="activeTab === 'preview'"
-                                class="border rounded-lg bg-white overflow-hidden shadow-sm">
-                                <iframe ref="iframeRef" :srcdoc="previewHtml" class="w-full h-[600px] border-0 bg-white"
-                                    title="Email Preview"></iframe>
-                            </div>
+                            <div id="template-editor-container">
+                                <div v-if="activeTab === 'preview'"
+                                    class="border rounded-lg bg-white overflow-hidden shadow-sm">
+                                    <iframe ref="iframeRef" :srcdoc="previewHtml" class="w-full h-[600px] border-0 bg-white"
+                                        title="Email Preview"></iframe>
+                                </div>
 
-                            <div v-if="activeTab === 'code'">
-                                <HtmlCodeEditor ref="codeEditorRef" v-model="htmlContent"
-                                    @input="parseTemplate(htmlContent)" @keydown="handleCodeEditorKeyDown"
-                                    placeholder="Enter HTML template here..." />
+                                <div v-if="activeTab === 'code'">
+                                    <HtmlCodeEditor ref="codeEditorRef" v-model="htmlContent"
+                                        @input="parseTemplate(htmlContent)" @keydown="handleCodeEditorKeyDown"
+                                        placeholder="Enter HTML template here..." />
+                                </div>
                             </div>
                         </div>
                         <!-- Local Images -->
@@ -301,17 +392,52 @@ const saveTemplate = handleSubmit(async (values) => {
                                 Map Variables
                             </h3>
                             <p class="text-sm text-amber-700 mb-4">We found placeholders in your template. Map them to
-                                the correct runner data fields.</p>
+                                the correct runner data fields. Click any active variable name to locate its first occurrence in the editor.</p>
 
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div v-for="v in variables" :key="v.name"
-                                    class="flex items-center gap-3 bg-white p-3 rounded border border-amber-100">
-                                    <span class="text-sm font-mono text-gray-600 w-1/3 truncate">\{{ v.name }}</span>
-                                    <select v-model="v.mappedTo" class="w-2/3 px-2 py-1 text-sm border rounded">
+                                    class="flex items-center gap-2.5 p-3 rounded border transition-colors"
+                                    :class="v.isUsed !== false ? 'bg-white border-amber-100 hover:border-amber-300' : 'bg-gray-50 border-gray-200'">
+                                    
+                                    <!-- Variable name (interactive if used) -->
+                                    <button
+                                        type="button"
+                                        @click="v.isUsed !== false ? locateVariable(v.name) : null"
+                                        :class="v.isUsed !== false ? 'cursor-pointer hover:text-amber-800 hover:bg-amber-100/60' : 'cursor-default text-gray-500'"
+                                        class="text-sm font-mono flex-1 min-w-0 truncate text-left px-2 py-1 rounded transition-all flex items-center justify-between group"
+                                        :title="v.isUsed !== false ? 'Click to locate first occurrence in editor or preview' : 'Variable is not used in the template'"
+                                    >
+                                        <span class="truncate">\{{ v.name }}</span>
+                                        <svg v-if="v.isUsed !== false" class="w-3.5 h-3.5 opacity-0 group-hover:opacity-75 text-amber-700 shrink-0 ml-1 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                                        </svg>
+                                    </button>
+
+                                    <!-- Status / Usage badges -->
+                                    <span v-if="v.isUsed === false" class="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-gray-200 text-gray-600 border border-gray-300 shrink-0">
+                                        Unused
+                                    </span>
+                                    <span v-else-if="v.usesCount && v.usesCount > 1" class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 shrink-0" :title="`${v.usesCount} occurrences in template`">
+                                        {{ v.usesCount }}x
+                                    </span>
+
+                                    <!-- Field mapping dropdown -->
+                                    <select v-model="v.mappedTo" class="w-40 sm:w-44 shrink-0 px-2 py-1 text-sm border rounded bg-white">
                                         <option value="">Select Field...</option>
                                         <option v-for="opt in availableMappings" :key="opt" :value="opt">{{ opt }}
                                         </option>
                                     </select>
+
+                                    <!-- Delete button (only when unused) -->
+                                    <button
+                                        v-if="v.isUsed === false"
+                                        type="button"
+                                        @click="deleteVariable(v.name)"
+                                        class="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors shrink-0 cursor-pointer"
+                                        title="Delete unused variable"
+                                    >
+                                        <Trash2Icon class="w-4 h-4" />
+                                    </button>
                                 </div>
                             </div>
                         </div>
