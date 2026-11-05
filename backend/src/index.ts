@@ -10,7 +10,6 @@ import 'dotenv/config'
 
 import router from '@/routes'
 import { Redis } from '@/app/lib/services/redis.service'
-import '@/queue/workers/email.worker'
 
 const PORT = process.env.PORT || 3000
 const MAX_RETRIES = 3
