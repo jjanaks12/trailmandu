@@ -1,6 +1,7 @@
 <script lang="ts" setup>
 import { useAxios } from '~/services/axios'
-import { LoaderIcon, RefreshCcwIcon } from 'lucide-vue-next'
+import { LoaderIcon, RefreshCcwIcon, SearchIcon, XIcon } from 'lucide-vue-next'
+import { watchDebounced } from '@vueuse/core'
 import { onMounted, ref } from 'vue'
 
 definePageMeta({
@@ -16,6 +17,7 @@ const isLoading = ref(true)
 interface EmailLog {
     id: string
     recipient: string
+    recipient_name?: string | null
     subject: string
     status: 'SUCCESS' | 'FAILED' | 'WAITING' | 'ACTIVE' | 'DELAYED' | 'QUEUED'
     error: string | null
@@ -30,6 +32,7 @@ const page = ref(1)
 const limit = ref(20)
 const total = ref(0)
 const statusFilter = ref<string>('failed')
+const searchQuery = ref('')
 
 const dateFilter = ref('all')
 const startDate = ref('')
@@ -62,7 +65,8 @@ const fetchCountsAndLogs = async () => {
                 limit: limit.value,
                 status: statusFilter.value,
                 startDate: startDate.value || undefined,
-                endDate: endDate.value || undefined
+                endDate: endDate.value || undefined,
+                search: searchQuery.value?.trim() || undefined
             }
         })
         counts.value = data.email
@@ -74,6 +78,11 @@ const fetchCountsAndLogs = async () => {
         isLoading.value = false
     }
 }
+
+watchDebounced(searchQuery, () => {
+    page.value = 1
+    fetchCountsAndLogs()
+}, { debounce: 400 })
 
 const applyDateFilter = () => {
     switch (dateFilter.value) {
@@ -231,7 +240,25 @@ onMounted(() => {
         </div>
 
         <div class="mt-8" v-if="!isLoading || logs.length">
-            <h2 class="text-lg font-semibold mb-4">Recent Email Logs</h2>
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+                <h2 class="text-lg font-semibold">Recent Email Logs</h2>
+                <div class="relative w-full sm:w-80">
+                    <SearchIcon class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                    <Input
+                        v-model="searchQuery"
+                        placeholder="Search by email or name..."
+                        class="pl-9 pr-8"
+                    />
+                    <button
+                        v-if="searchQuery"
+                        @click="searchQuery = ''"
+                        type="button"
+                        class="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1"
+                    >
+                        <XIcon class="w-3.5 h-3.5" />
+                    </button>
+                </div>
+            </div>
             <div class="border rounded-md">
                 <Table>
                     <TableHeader>
@@ -246,7 +273,10 @@ onMounted(() => {
                     <TableBody>
                         <TableRow v-for="log in logs" :key="log.id">
                             <TableCell class="whitespace-nowrap">{{ formatDate(log.created_at) }}</TableCell>
-                            <TableCell>{{ log.recipient }}</TableCell>
+                            <TableCell>
+                                <div class="font-medium text-foreground text-sm" v-if="log.recipient_name">{{ log.recipient_name }}</div>
+                                <div :class="log.recipient_name ? 'text-xs text-muted-foreground' : 'text-sm'">{{ log.recipient }}</div>
+                            </TableCell>
                             <TableCell class="max-w-xs truncate" :title="log.subject">{{ log.subject }}</TableCell>
                             <TableCell>
                                 <Badge :variant="getBadgeVariant(log.status)">
@@ -269,8 +299,8 @@ onMounted(() => {
                             </TableCell>
                         </TableRow>
                         <TableRow v-if="!logs.length">
-                            <TableCell colspan="4" class="h-24 text-center">
-                                No email logs found.
+                            <TableCell colspan="5" class="h-24 text-center text-muted-foreground">
+                                {{ searchQuery ? `No email logs found matching "${searchQuery}".` : 'No email logs found.' }}
                             </TableCell>
                         </TableRow>
                     </TableBody>
