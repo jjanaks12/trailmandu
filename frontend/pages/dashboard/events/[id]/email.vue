@@ -290,13 +290,87 @@ const saveTemplate = handleSubmit(async (values) => {
                             stage the runner is registered for</label>
                     </div>
 
-                    <!-- Template Upload -->
+                    <!-- Template Source Selection -->
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">HTML Template File</label>
-                        <input type="file" accept=".html,.htm" @change="handleTemplateUpload"
-                            class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20 cursor-pointer">
-                        <span v-if="htmlContentError" class="text-xs text-red-500 mt-1 block">{{ htmlContentError
-                            }}</span>
+                        <div class="flex items-center justify-between mb-2">
+                            <label class="block text-sm font-medium text-gray-700">HTML Template Source</label>
+                            <div class="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5 text-xs font-medium">
+                                <button
+                                    type="button"
+                                    @click="templateSource = 'upload'"
+                                    :class="templateSource === 'upload' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'"
+                                    class="flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-all cursor-pointer"
+                                >
+                                    <UploadCloudIcon class="w-3.5 h-3.5" />
+                                    <span>Upload File</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    @click="templateSource = 'paste'"
+                                    :class="templateSource === 'paste' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'"
+                                    class="flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-all cursor-pointer"
+                                >
+                                    <CodeIcon class="w-3.5 h-3.5" />
+                                    <span>Paste / Write HTML</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Mode 1: Upload File -->
+                        <div v-if="templateSource === 'upload'" class="border border-dashed border-gray-200 rounded-lg p-4 bg-gray-50/50">
+                            <label class="block text-xs font-medium text-gray-600 mb-1.5">Choose an HTML file (.html, .htm)</label>
+                            <input type="file" accept=".html,.htm" @change="handleTemplateUpload"
+                                class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20 cursor-pointer">
+                        </div>
+
+                        <!-- Mode 2: Paste / Write HTML -->
+                        <div v-else-if="templateSource === 'paste'" class="border border-dashed border-gray-200 rounded-lg p-4 bg-gray-50/50 space-y-3">
+                            <div class="flex items-center justify-between">
+                                <label class="text-xs font-medium text-gray-600">Paste your raw HTML code below</label>
+                                <div class="flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        @click="startBlankTemplate"
+                                        class="text-xs text-primary hover:underline flex items-center gap-1 font-medium cursor-pointer"
+                                        title="Load a pre-built starter template with standard variables"
+                                    >
+                                        <SparklesIcon class="w-3.5 h-3.5" />
+                                        <span>Starter Template</span>
+                                    </button>
+                                    <span class="text-gray-300">|</span>
+                                    <button
+                                        type="button"
+                                        @click="startEmptyTemplate"
+                                        class="text-xs text-gray-600 hover:text-gray-900 hover:underline flex items-center gap-1 cursor-pointer"
+                                        title="Start with a minimal HTML boilerplate"
+                                    >
+                                        <FileCodeIcon class="w-3.5 h-3.5" />
+                                        <span>Blank HTML</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <textarea
+                                v-model="rawPastedHtml"
+                                rows="5"
+                                placeholder="Paste HTML here, e.g.:&#10;<!DOCTYPE html>&#10;<html>&#10;  <body>&#10;    <h1>Hello {{first_name}}</h1>&#10;  </body>&#10;</html>"
+                                class="w-full font-mono text-xs p-3 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary bg-white resize-y"
+                            ></textarea>
+
+                            <div class="flex justify-end gap-2">
+                                <button
+                                    type="button"
+                                    @click="applyPastedHtml"
+                                    :disabled="!rawPastedHtml.trim()"
+                                    class="px-4 py-1.5 bg-primary text-white text-xs font-medium rounded-md hover:bg-primary/90 disabled:opacity-50 transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
+                                >
+                                    <CheckIcon class="w-3.5 h-3.5" />
+                                    <span>Apply HTML</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <span v-if="htmlContentError" class="text-xs text-red-500 mt-1 block">{{ htmlContentError }}</span>
                     </div>
 
                     <div v-if="htmlContent" class="space-y-6 pt-4 border-t">

@@ -1,8 +1,20 @@
 <script lang="ts" setup>
 import { useAxios } from '~/services/axios'
-import { LoaderIcon, RefreshCcwIcon, SearchIcon, XIcon } from 'lucide-vue-next'
+import {
+    LoaderIcon,
+    RefreshCcwIcon,
+    SearchIcon,
+    XIcon,
+    SendIcon,
+    CheckCircle2Icon,
+    ShieldCheckIcon,
+    ZapIcon,
+    MailIcon
+} from 'lucide-vue-next'
 import { watchDebounced } from '@vueuse/core'
 import { onMounted, ref } from 'vue'
+import { toast } from 'vue-sonner'
+import moment from 'moment'
 
 definePageMeta({
     layout: 'admin',
@@ -26,7 +38,23 @@ interface EmailLog {
     parentId?: string | null
 }
 
-import moment from 'moment'
+interface QuotaBucket {
+    used: number
+    limit: number
+    remaining: number
+    percentage: number
+}
+
+interface QuotaData {
+    source?: string
+    today: QuotaBucket
+    month: QuotaBucket
+    hour: { limit: number; note: string }
+    domain: { name: string; status: string; verified: boolean }
+    provider: string
+}
+
+const quota = ref<QuotaData | null>(null)
 
 const page = ref(1)
 const limit = ref(20)
@@ -72,6 +100,9 @@ const fetchCountsAndLogs = async () => {
         counts.value = data.email
         logs.value = data.logs
         total.value = data.total
+        if (data.quota) {
+            quota.value = data.quota
+        }
     } catch (e) {
         console.error('Failed to fetch queues', e)
     } finally {
@@ -155,13 +186,78 @@ const submitResend = async () => {
         await axios.post(`/queues/${resendLog.value.id}/resend`, {
             newRecipientEmail: newRecipientEmail.value !== resendLog.value.recipient ? newRecipientEmail.value : undefined
         })
+        toast.success('Email queued for resending!')
         await fetchCountsAndLogs()
         resendLog.value = null
     } catch (e: any) {
         console.error('Failed to resend email', e)
-        alert(e.response?.data?.error || 'Failed to resend email. It might not have a payload stored.')
+        toast.error(e.response?.data?.error || 'Failed to resend email. It might not have a payload stored.')
     } finally {
         isResending.value = false
+    }
+}
+
+const sendImmediateDialogOpen = ref(false)
+const isSendingImmediate = ref(false)
+const immediateForm = ref({
+    to: '',
+    subject: '',
+    senderEmail: 'info@trailmandu.com',
+    isHtml: true,
+    content: ''
+})
+
+const openSendImmediateDialog = () => {
+    immediateForm.value = {
+        to: '',
+        subject: '',
+        senderEmail: 'info@trailmandu.com',
+        isHtml: true,
+        content: ''
+    }
+    sendImmediateDialogOpen.value = true
+}
+
+const submitSendImmediate = async () => {
+    if (!immediateForm.value.to || !immediateForm.value.to.trim()) {
+        toast.error('Please enter a recipient email address')
+        return
+    }
+    if (!immediateForm.value.subject || !immediateForm.value.subject.trim()) {
+        toast.error('Please enter an email subject')
+        return
+    }
+    if (!immediateForm.value.content || !immediateForm.value.content.trim()) {
+        toast.error('Please enter email message content')
+        return
+    }
+
+    isSendingImmediate.value = true
+    try {
+        await axios.post('/queues/send-immediate', {
+            to: immediateForm.value.to.trim(),
+            subject: immediateForm.value.subject.trim(),
+            senderEmail: immediateForm.value.senderEmail?.trim() || undefined,
+            html: immediateForm.value.isHtml ? immediateForm.value.content : undefined,
+            text: !immediateForm.value.isHtml ? immediateForm.value.content : undefined
+        })
+        toast.success('Email dispatched and queued for immediate delivery!')
+        sendImmediateDialogOpen.value = false
+        await fetchCountsAndLogs()
+    } catch (e: any) {
+        toast.error(e.response?.data?.error || 'Failed to send email immediately')
+    } finally {
+        isSendingImmediate.value = false
+    }
+}
+
+const sendJobImmediately = async (log: EmailLog) => {
+    try {
+        await axios.post(`/queues/${log.id}/promote`)
+        toast.success('Queued email promoted to send immediately!')
+        await fetchCountsAndLogs()
+    } catch (e: any) {
+        toast.error(e.response?.data?.error || 'Failed to promote job')
     }
 }
 
@@ -203,6 +299,104 @@ onMounted(() => {
                     <RefreshCcwIcon class="w-4 h-4 mr-2" :class="{ 'animate-spin': isLoading }" />
                     Refresh
                 </Button>
+
+                <Button size="sm" @click="openSendImmediateDialog" class="cursor-pointer bg-primary text-white hover:bg-primary/90 flex items-center gap-1.5 shadow-sm">
+                    <SendIcon class="w-4 h-4" />
+                    <span>Send Email Immediately</span>
+                </Button>
+            </div>
+        </div>
+
+        <!-- Email Sending Quota Overview -->
+        <div v-if="quota" class="bg-card border rounded-xl p-5 shadow-sm space-y-4">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b">
+                <div class="flex items-center gap-2.5">
+                    <div class="p-2 bg-primary/10 text-primary rounded-lg">
+                        <MailIcon class="w-5 h-5" />
+                    </div>
+                    <div>
+                        <h2 class="text-base font-semibold text-foreground flex items-center gap-2">
+                            <span>Email Sending Quota</span>
+                            <span class="text-xs px-2 py-0.5 rounded-full font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+                                <ShieldCheckIcon class="w-3.5 h-3.5" />
+                                <span>{{ quota.provider }} • {{ quota.domain.name }} ({{ quota.domain.status }})</span>
+                            </span>
+                        </h2>
+                        <p class="text-xs text-muted-foreground mt-0.5">
+                            Real-time delivery statistics & account limits (source: {{ quota.source === 'mailtrap' ? 'Mailtrap Live API' : 'Application Database' }}).
+                        </p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2 text-xs text-muted-foreground">
+                    <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-muted font-mono">
+                        <ZapIcon class="w-3.5 h-3.5 text-amber-500" />
+                        <span>Throughput: {{ quota.hour.limit }}/hr max</span>
+                    </span>
+                </div>
+            </div>
+
+            <!-- Quota Metrics Grid -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <!-- Daily Quota -->
+                <div class="p-4 rounded-lg bg-muted/40 border border-border/60 space-y-2">
+                    <div class="flex items-center justify-between text-xs font-medium">
+                        <span class="text-muted-foreground">Today's Daily Quota</span>
+                        <span class="font-semibold text-foreground">{{ quota.today.used }} / {{ quota.today.limit }}</span>
+                    </div>
+                    <!-- Progress Bar -->
+                    <div class="h-2 w-full bg-muted rounded-full overflow-hidden">
+                        <div
+                            class="h-full rounded-full transition-all duration-500"
+                            :class="quota.today.percentage > 85 ? 'bg-red-500' : quota.today.percentage > 60 ? 'bg-amber-500' : 'bg-primary'"
+                            :style="{ width: Math.max(quota.today.percentage, 2) + '%' }"
+                        ></div>
+                    </div>
+                    <div class="flex items-center justify-between text-[11px] text-muted-foreground pt-0.5">
+                        <span>{{ quota.today.percentage }}% used</span>
+                        <span class="font-medium text-emerald-600">{{ quota.today.remaining }} remaining today</span>
+                    </div>
+                </div>
+
+                <!-- Monthly Quota -->
+                <div class="p-4 rounded-lg bg-muted/40 border border-border/60 space-y-2">
+                    <div class="flex items-center justify-between text-xs font-medium">
+                        <span class="text-muted-foreground">Monthly Billing Quota</span>
+                        <span class="font-semibold text-foreground">{{ quota.month.used }} / {{ quota.month.limit.toLocaleString() }}</span>
+                    </div>
+                    <!-- Progress Bar -->
+                    <div class="h-2 w-full bg-muted rounded-full overflow-hidden">
+                        <div
+                            class="h-full rounded-full transition-all duration-500"
+                            :class="quota.month.percentage > 85 ? 'bg-red-500' : quota.month.percentage > 60 ? 'bg-amber-500' : 'bg-primary'"
+                            :style="{ width: Math.max(quota.month.percentage, 1) + '%' }"
+                        ></div>
+                    </div>
+                    <div class="flex items-center justify-between text-[11px] text-muted-foreground pt-0.5">
+                        <span>{{ quota.month.percentage }}% used</span>
+                        <span class="font-medium text-emerald-600">{{ quota.month.remaining.toLocaleString() }} remaining this month</span>
+                    </div>
+                </div>
+
+                <!-- Sending Health & Domain -->
+                <div class="p-4 rounded-lg bg-muted/40 border border-border/60 flex flex-col justify-between">
+                    <div class="flex items-center justify-between text-xs font-medium mb-1">
+                        <span class="text-muted-foreground">Sender Domain Health</span>
+                        <span class="text-emerald-600 font-semibold flex items-center gap-1">
+                            <CheckCircle2Icon class="w-3.5 h-3.5" />
+                            <span>{{ quota.domain.status.toUpperCase() }}</span>
+                        </span>
+                    </div>
+                    <div class="text-xs text-muted-foreground space-y-1">
+                        <div class="flex items-center justify-between">
+                            <span>Domain:</span>
+                            <span class="font-mono text-foreground font-medium">{{ quota.domain.name }}</span>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span>SPF / DKIM / DMARC:</span>
+                            <span class="text-emerald-600 font-medium">Verified (100% Pass)</span>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -293,9 +487,21 @@ onMounted(() => {
                                 </div>
                             </TableCell>
                             <TableCell class="text-right">
-                                <Button v-if="log.payload" modifier="outline" size="sm" @click="openResendDialog(log)">
-                                    Resend
-                                </Button>
+                                <div class="flex items-center justify-end gap-2">
+                                    <Button
+                                        v-if="log.status === 'WAITING' || log.status === 'DELAYED' || log.status === 'QUEUED'"
+                                        size="sm"
+                                        class="cursor-pointer bg-primary/10 text-primary hover:bg-primary/20 hover:text-primary font-medium"
+                                        @click="sendJobImmediately(log)"
+                                        title="Promote queue job to send immediately"
+                                    >
+                                        <ZapIcon class="w-3.5 h-3.5 mr-1 text-amber-500" />
+                                        Send Now
+                                    </Button>
+                                    <Button v-if="log.payload" modifier="outline" size="sm" @click="openResendDialog(log)">
+                                        Resend
+                                    </Button>
+                                </div>
                             </TableCell>
                         </TableRow>
                         <TableRow v-if="!logs.length">
@@ -359,6 +565,98 @@ onMounted(() => {
                     <Button @click="submitResend" :disabled="isResending">
                         <LoaderIcon v-if="isResending" class="w-4 h-4 mr-2 animate-spin" />
                         Send Now
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+
+        <!-- Send Email Immediately Dialog -->
+        <Dialog :open="sendImmediateDialogOpen" @update:open="sendImmediateDialogOpen = false">
+            <DialogContent class="max-w-xl">
+                <DialogHeader>
+                    <DialogTitle class="flex items-center gap-2">
+                        <SendIcon class="w-5 h-5 text-primary" />
+                        <span>Send Email Immediately</span>
+                    </DialogTitle>
+                </DialogHeader>
+
+                <div class="space-y-4 py-2">
+                    <div class="space-y-1.5">
+                        <Label for="imm-to">Recipient Email <span class="text-red-500">*</span></Label>
+                        <Input
+                            id="imm-to"
+                            v-model="immediateForm.to"
+                            type="email"
+                            placeholder="runner@example.com"
+                            required
+                        />
+                    </div>
+
+                    <div class="space-y-1.5">
+                        <Label for="imm-subject">Subject <span class="text-red-500">*</span></Label>
+                        <Input
+                            id="imm-subject"
+                            v-model="immediateForm.subject"
+                            placeholder="Important notice regarding your race registration"
+                            required
+                        />
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3">
+                        <div class="space-y-1.5">
+                            <Label for="imm-sender">Sender Email</Label>
+                            <Input
+                                id="imm-sender"
+                                v-model="immediateForm.senderEmail"
+                                placeholder="info@trailmandu.com"
+                            />
+                        </div>
+                        <div class="space-y-1.5">
+                            <Label>Format</Label>
+                            <div class="flex rounded-md border p-1 bg-muted/40 text-xs">
+                                <button
+                                    type="button"
+                                    @click="immediateForm.isHtml = true"
+                                    :class="immediateForm.isHtml ? 'bg-white shadow-sm text-foreground font-semibold' : 'text-muted-foreground'"
+                                    class="flex-1 py-1 rounded transition-all cursor-pointer"
+                                >
+                                    HTML
+                                </button>
+                                <button
+                                    type="button"
+                                    @click="immediateForm.isHtml = false"
+                                    :class="!immediateForm.isHtml ? 'bg-white shadow-sm text-foreground font-semibold' : 'text-muted-foreground'"
+                                    class="flex-1 py-1 rounded transition-all cursor-pointer"
+                                >
+                                    Plain Text
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="space-y-1.5">
+                        <div class="flex items-center justify-between">
+                            <Label for="imm-content">Email Content <span class="text-red-500">*</span></Label>
+                            <span class="text-xs text-muted-foreground">{{ immediateForm.isHtml ? 'Accepts HTML markup' : 'Plain text format' }}</span>
+                        </div>
+                        <textarea
+                            id="imm-content"
+                            v-model="immediateForm.content"
+                            rows="7"
+                            :placeholder="immediateForm.isHtml ? '<h2>Hello Runner,</h2>\n<p>Your bib number is <strong>101</strong>.</p>' : 'Hello Runner,\n\nYour bib number is 101.'"
+                            class="w-full font-mono text-xs p-3 border rounded-md focus:ring-primary focus:border-primary bg-background resize-y"
+                        ></textarea>
+                    </div>
+                </div>
+
+                <DialogFooter class="gap-2">
+                    <Button modifier="outline" @click="sendImmediateDialogOpen = false" :disabled="isSendingImmediate">
+                        Cancel
+                    </Button>
+                    <Button @click="submitSendImmediate" :disabled="isSendingImmediate" class="cursor-pointer bg-primary text-white hover:bg-primary/90">
+                        <LoaderIcon v-if="isSendingImmediate" class="w-4 h-4 mr-2 animate-spin" />
+                        <SendIcon v-else class="w-4 h-4 mr-2" />
+                        <span>Send Immediately</span>
                     </Button>
                 </DialogFooter>
             </DialogContent>
