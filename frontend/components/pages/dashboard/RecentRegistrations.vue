@@ -1,13 +1,37 @@
 <script lang="ts" setup>
 import { RefreshCwIcon, CalendarCheckIcon, ClockIcon, UserIcon, ArrowRightIcon } from 'lucide-vue-next'
+import { storeToRefs } from 'pinia'
 import { useAxios } from '~/services/axios'
 import { formatDate } from '~/lib/filters'
 import type { EventRunner } from '~/lib/types'
+import { useEventStore } from '~/store/event'
 
 const { axios } = useAxios()
+const eventStore = useEventStore()
+const { currentRace, currentStage } = storeToRefs(eventStore)
 
 const registrations = ref<EventRunner[]>([])
 const isLoading = ref(false)
+
+const runnersUrl = computed(() => {
+    if (currentRace.value?.id) {
+        if (currentStage.value?.id) {
+            return `/dashboard/events/${currentRace.value.id}/runners?stage_id=${currentStage.value.id}`
+        }
+        return `/dashboard/events/${currentRace.value.id}/runners`
+    }
+    const firstWithStage = registrations.value.find(r => (r.stage?.event?.id || r.event?.id) && r.stage_id)
+    if (firstWithStage) {
+        const eventId = firstWithStage.stage?.event?.id || firstWithStage.event?.id
+        return `/dashboard/events/${eventId}/runners?stage_id=${firstWithStage.stage_id}`
+    }
+    const firstRunner = registrations.value.find(r => r.stage?.event?.id || r.event?.id)
+    if (firstRunner) {
+        const eventId = firstRunner.stage?.event?.id || firstRunner.event?.id
+        return `/dashboard/events/${eventId}/runners`
+    }
+    return '/dashboard/events'
+})
 
 const statusVariant = (status: any) => {
     switch (status?.status) {
@@ -35,7 +59,14 @@ const fetchRegistrations = async () => {
     }
 }
 
-onMounted(fetchRegistrations)
+onMounted(async () => {
+    fetchRegistrations()
+    try {
+        await eventStore.fetchCurrentRace()
+    } catch (err) {
+        console.error('Failed to fetch current race', err)
+    }
+})
 </script>
 
 <template>
@@ -50,6 +81,13 @@ onMounted(fetchRegistrations)
                     class="text-muted-foreground hover:text-foreground">
                     <RefreshCwIcon class="w-4 h-4" :class="{ 'animate-spin': isLoading }" />
                 </Button>
+                <NuxtLink :to="runnersUrl">
+                    <Button modifier="link" size="sm" class="text-xs text-muted-foreground hover:text-primary gap-1"
+                        :title="currentStage?.name ? `View ${currentStage.name} runners` : 'View runners'">
+                        View all
+                        <ArrowRightIcon class="w-3 h-3" />
+                    </Button>
+                </NuxtLink>
             </div>
         </CardHeader>
         <CardContent class="p-0">

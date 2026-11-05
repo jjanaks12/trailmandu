@@ -38,6 +38,7 @@ router.put('/:event_id/upload_map_file', [verifyAccessToken], EventController.up
 router.delete('/:event_id', [verifyAccessToken], EventController.destory)
 router.get('/:event_id/email-template', [verifyAccessToken], EventController.getEmailTemplate)
 router.post('/:event_id/email-template', [verifyAccessToken], EventController.saveEmailTemplate)
+router.post('/:event_id/email-template/test', [verifyAccessToken], EventController.sendTestEmail)
 
 // STAGES
 router.get('/:event_id/stages', [verifyAccessToken], StageController.index)

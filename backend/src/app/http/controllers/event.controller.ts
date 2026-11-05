@@ -1,5 +1,7 @@
 import { NextFunction, Request, Response } from "express"
 import { Prisma } from "@prisma/client"
+import path from "path"
+import fs from "fs"
 
 import { APIQuery } from "@/app/lib/types"
 import { eventSchema } from "@/app/lib/schema/event.schema"
@@ -7,6 +9,8 @@ import moment from "moment"
 import { FileHandler } from "@/app/lib/services/file.service"
 import { prisma } from '@/app/lib/services/prisma.service'
 import { Redis } from '@/app/lib/services/redis.service'
+import { emailQueue } from "@/queue/email.queue"
+import { __basedir } from "@/index"
 
 export class EventController {
     public static async clearCache(request: Request, response: Response, next: NextFunction) {
@@ -518,6 +522,163 @@ export class EventController {
                 where: { event_id: eventId }
             })
             response.send(template)
+        } catch (error) {
+            next(error)
+        }
+    }
+
+    public static async sendTestEmail(request: Request, response: Response, next: NextFunction) {
+        try {
+            const eventId = request.params.event_id as string
+            const { testEmail, subject, htmlTemplate, variableMap, attachStageGpx, stageId } = request.body
+
+            if (!testEmail || typeof testEmail !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(testEmail.trim())) {
+                response.status(400).json({ error: 'Valid test email address is required' })
+                return
+            }
+
+            const targetEmail = testEmail.trim()
+
+            const event = await prisma.trailRace.findUnique({
+                where: { id: eventId },
+                include: { thumbnail: true }
+            })
+
+            if (!event) {
+                response.status(404).json({ error: 'Event not found' })
+                return
+            }
+
+            let finalSubject = subject
+            let finalHtmlTemplate = htmlTemplate
+            let finalVariableMap = variableMap
+            let finalAttachStageGpx = attachStageGpx
+
+            if (!finalSubject || !finalHtmlTemplate) {
+                const savedTemplate = await prisma.eventEmailTemplate.findUnique({
+                    where: { event_id: eventId }
+                })
+                if (savedTemplate) {
+                    finalSubject = finalSubject || savedTemplate.subject
+                    finalHtmlTemplate = finalHtmlTemplate || savedTemplate.htmlContent
+                    finalVariableMap = finalVariableMap || (savedTemplate.variableMap as Record<string, string>)
+                    if (finalAttachStageGpx === undefined) {
+                        finalAttachStageGpx = savedTemplate.attachStageGpx
+                    }
+                }
+            }
+
+            if (!finalSubject || !finalHtmlTemplate) {
+                response.status(400).json({ error: 'Subject and HTML template are required' })
+                return
+            }
+
+            // Find sample stage category (either for specified stage or first available in event)
+            let sampleStageCategory = null
+            if (stageId) {
+                sampleStageCategory = await prisma.stageCategory.findFirst({
+                    where: { stage_id: stageId, deleted_at: null },
+                    include: { stage: { include: { event: true } }, map_file: true }
+                })
+            }
+            if (!sampleStageCategory) {
+                sampleStageCategory = await prisma.stageCategory.findFirst({
+                    where: { stage: { event_id: eventId }, deleted_at: null },
+                    include: { stage: { include: { event: true } }, map_file: true }
+                })
+            }
+
+            // Try to find an actual runner in this event to use realistic test data
+            const sampleRunner = await prisma.eventRunner.findFirst({
+                where: { stage_category: { stage: { event_id: eventId } }, deleted_at: null },
+                include: {
+                    personal: { include: { country: true, gender: true } },
+                    stage_category: { include: { stage: { include: { event: true } }, map_file: true } }
+                }
+            })
+
+            const runnerStageCat = sampleRunner?.stage_category || sampleStageCategory
+            const baseUrl = process.env.APP_URL || `${request.protocol}://${request.get('host')}`
+            const gpxFileUrl = runnerStageCat?.map_file?.file_name
+                ? `${baseUrl}/resources/gpx/${runnerStageCat.map_file.file_name}`
+                : `${baseUrl}/resources/gpx/sample.gpx`
+
+            const values: Record<string, string> = {
+                'First Name': sampleRunner?.personal?.first_name || 'John',
+                'Last Name': sampleRunner?.personal?.last_name || 'Doe',
+                'Full Name': [sampleRunner?.personal?.first_name, sampleRunner?.personal?.middle_name, sampleRunner?.personal?.last_name].filter(Boolean).join(' ') || 'John Doe',
+                'Email': targetEmail,
+                'BIB Number': sampleRunner?.bib || '101',
+                'Country': sampleRunner?.personal?.country?.name || 'Nepal',
+                'Gender': sampleRunner?.personal?.gender?.name || 'Male',
+                'Stage Distance': runnerStageCat?.distance || runnerStageCat?.name || '50 km',
+                'Stage Category Name': runnerStageCat?.name || '50K Challenge',
+                'GPX File': gpxFileUrl,
+                'GPX File URL': gpxFileUrl,
+                'Event Name': event.name || 'Trailmandu Event',
+                'Event Timing': runnerStageCat?.start ? moment.utc(runnerStageCat.start).local().format('DD-MM-YYYY hh:mm a') : '25-12-2026 06:00 am',
+                'Event Thumbnail URL': finalVariableMap?.['Event Thumbnail URL'] || '',
+                'Stage Image URL': finalVariableMap?.['Stage Image URL'] || ''
+            }
+
+            let renderedHtml = finalHtmlTemplate
+            const mapKeys = Object.keys(finalVariableMap || {})
+            for (const placeholder of mapKeys) {
+                const mappedField = finalVariableMap[placeholder]
+                const val = values[mappedField] !== undefined ? values[mappedField] : mappedField
+                const regex = new RegExp(placeholder.replace(/[.*+?^$()|[\]\\]/g, '\\$&'), 'g')
+                renderedHtml = renderedHtml.replace(regex, val)
+            }
+
+            const attachments: any[] = []
+            if (finalAttachStageGpx && runnerStageCat?.map_file?.file_name) {
+                const fileName = runnerStageCat.map_file.file_name
+                const possiblePaths = [
+                    path.join(__basedir, 'uploads', 'gpx', fileName),
+                    path.join(__basedir, 'uploads', 'images', fileName),
+                    path.join(__basedir, 'uploads', 'files', fileName)
+                ]
+                let foundPath = null
+                for (const p of possiblePaths) {
+                    if (fs.existsSync(p)) {
+                        foundPath = p
+                        break
+                    }
+                }
+                if (foundPath) {
+                    attachments.push({ filename: fileName, path: foundPath })
+                }
+            }
+
+            const testSubject = `[TEST] ${finalSubject}`
+
+            await emailQueue.add('sendEmail', {
+                to: targetEmail,
+                subject: testSubject,
+                html: renderedHtml,
+                senderEmail: 'info@trailmandu.com',
+                category: 'event_test_email',
+                attachments
+            })
+
+            await prisma.emailLog.create({
+                data: {
+                    recipient: targetEmail,
+                    subject: testSubject,
+                    status: 'SUCCESS',
+                    payload: {
+                        type: 'event_test_email',
+                        event_id: eventId,
+                        to: targetEmail,
+                        subject: testSubject,
+                        html: renderedHtml,
+                        senderEmail: 'info@trailmandu.com',
+                        attachments
+                    }
+                }
+            }).catch(err => console.error('Failed to log test email:', err))
+
+            response.json({ message: `Test email queued successfully to ${targetEmail}` })
         } catch (error) {
             next(error)
         }

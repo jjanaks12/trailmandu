@@ -1,7 +1,8 @@
 <script lang="ts" setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { toast } from 'vue-sonner'
+import { SendIcon } from 'lucide-vue-next'
 import { useForm, useField } from 'vee-validate'
 import * as yup from 'yup'
 import ClearCacheButton from '@/components/pages/dashboard/event/ClearCacheButton.vue'
@@ -10,6 +11,7 @@ import type { TrailRace, Stage } from '~/lib/types'
 import { useEventStore } from '~/store/event'
 import { useStageStore } from '~/store/stage'
 import { useMediaStore } from '~/store/media'
+import { useAuthStore } from '~/store/auth'
 import { useAxios } from '~/services/axios'
 import { useRuntimeConfig } from '#app'
 
@@ -26,22 +28,35 @@ const mediaStore = useMediaStore()
 const { media } = storeToRefs(mediaStore)
 const { axios } = useAxios()
 const config = useRuntimeConfig()
+const authStore = useAuthStore()
+
+const testEmailDialogOpen = ref(false)
+const testEmailRecipient = ref('')
+const testEmailStageId = ref('')
+const isSendingTestEmail = ref(false)
+
+const openTestEmailDialog = () => {
+    if (!testEmailRecipient.value) {
+        testEmailRecipient.value = authStore.user?.personal?.email || ''
+    }
+    testEmailDialogOpen.value = true
+}
 
 const eventId = route.params.id as string
 const trailRace = ref<TrailRace | null>(null)
 
 // Form state
 const schema = yup.object({
-  subject: yup.string().required('Subject is required'),
-  htmlContent: yup.string().required('Please upload or write an HTML template')
+    subject: yup.string().required('Subject is required'),
+    htmlContent: yup.string().required('Please upload or write an HTML template')
 })
 
 const { handleSubmit } = useForm({
-  validationSchema: schema,
-  initialValues: {
-    subject: '',
-    htmlContent: ''
-  }
+    validationSchema: schema,
+    initialValues: {
+        subject: '',
+        htmlContent: ''
+    }
 })
 
 const { value: subject, errorMessage: subjectError } = useField<string>('subject')
@@ -50,7 +65,7 @@ const attachStageGpx = ref(false)
 const isLoading = ref(false)
 const activeTab = ref('preview')
 const iframeRef = ref<HTMLIFrameElement | null>(null)
-const codeEditorRef = ref<HTMLTextAreaElement | null>(null)
+const codeEditorRef = ref<any>(null)
 
 const previewHtml = computed(() => {
     if (!htmlContent.value) return ''
@@ -74,6 +89,18 @@ const previewHtml = computed(() => {
         }
         .tooltip-btn:hover {
             background: #374151;
+        }
+        ._preview_text_editable {
+            transition: outline 0.15s ease, background-color 0.15s ease;
+            border-radius: 2px;
+        }
+        ._preview_text_editable:hover {
+            outline: 1.5px dashed #3b82f6 !important;
+            cursor: text !important;
+        }
+        ._preview_text_editable:focus {
+            outline: 2px solid #2563eb !important;
+            background-color: rgba(59, 130, 246, 0.06) !important;
         }
     </style>
     <div id="_var_tooltip"></div>
@@ -114,6 +141,60 @@ const previewHtml = computed(() => {
                 }
             }
         });
+
+        // Prevent links from navigating away inside preview
+        document.addEventListener('click', (e) => {
+            const link = e.target.closest('a');
+            if (link) {
+                e.preventDefault();
+            }
+        });
+
+        // Initialize inline text editing on leaf text elements
+        function initEditableElements() {
+            const candidates = document.querySelectorAll('h1, h2, h3, h4, h5, h6, p, td, th, li, a, span, b, strong, em, i, label, div');
+            candidates.forEach(el => {
+                if (el.closest('#_var_tooltip')) return;
+
+                const hasBlockChildren = el.querySelector('p, h1, h2, h3, h4, h5, h6, table, ul, ol, div');
+                if (!hasBlockChildren && el.innerText && el.innerText.trim().length > 0) {
+                    el.setAttribute('contenteditable', 'plaintext-only');
+                    el.classList.add('_preview_text_editable');
+
+                    let originalText = '';
+                    el.addEventListener('focus', () => {
+                        originalText = el.innerText;
+                    });
+
+                    el.addEventListener('blur', () => {
+                        const currentText = el.innerText;
+                        if (currentText !== originalText && originalText.trim().length > 0) {
+                            window.parent.postMessage({
+                                type: 'TEXT_EDITED',
+                                oldText: originalText,
+                                newText: currentText
+                            }, '*');
+                            originalText = currentText;
+                        }
+                    });
+
+                    if (['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'a', 'span', 'strong', 'em', 'b', 'i', 'label'].includes(el.tagName.toLowerCase())) {
+                        el.addEventListener('keydown', (e) => {
+                            if (e.key === 'Enter') {
+                                e.preventDefault();
+                                el.blur();
+                            }
+                        });
+                    }
+                }
+            });
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initEditableElements);
+        } else {
+            initEditableElements();
+        }
 
         function createVar(e) {
             e.preventDefault();
@@ -172,6 +253,21 @@ const handleCodeEditorVariable = () => {
     }
 }
 
+const handleCodeEditorKeyDown = (e: KeyboardEvent) => {
+    // Allow Tab key to indent with 2 spaces instead of leaving textarea
+    if (e.key === 'Tab' && codeEditorRef.value) {
+        e.preventDefault()
+        const textarea = codeEditorRef.value
+        const start = textarea.selectionStart
+        const end = textarea.selectionEnd
+        const val = htmlContent.value
+        htmlContent.value = val.substring(0, start) + '  ' + val.substring(end)
+        nextTick(() => {
+            textarea.selectionStart = textarea.selectionEnd = start + 2
+        })
+    }
+}
+
 const replaceImageSrc = (oldSrc: string, newSrc: string) => {
     if (!oldSrc) return;
     if (htmlContent.value.includes(`src="${oldSrc}"`)) {
@@ -219,6 +315,24 @@ const handleIframeMessage = (e: MessageEvent) => {
         } else if (e.data.action === 'upload') {
             selectImageForSrc(src);
         }
+    } else if (e.data.type === 'TEXT_EDITED') {
+        const { oldText, newText } = e.data
+        if (oldText && newText !== undefined && oldText !== newText) {
+            if (htmlContent.value.includes(oldText)) {
+                htmlContent.value = htmlContent.value.replace(oldText, newText)
+                parseTemplate(htmlContent.value)
+                toast.success('Text updated in template!')
+            } else {
+                const trimmedOld = oldText.trim()
+                if (htmlContent.value.includes(trimmedOld)) {
+                    htmlContent.value = htmlContent.value.replace(trimmedOld, newText.trim())
+                    parseTemplate(htmlContent.value)
+                    toast.success('Text updated in template!')
+                } else {
+                    toast.error('Could not find the exact text in template HTML. Use the Code Editor to edit.')
+                }
+            }
+        }
     }
 }
 
@@ -228,8 +342,9 @@ const variables = ref<{ name: string, mappedTo: string }[]>([])
 
 const availableMappings = [
     'First Name', 'Last Name', 'Full Name', 'Email', 'BIB Number',
-    'Country', 'Gender', 'Stage Distance', 'Event Name',
-    'Event Timing', 'Event Thumbnail URL', 'Stage Image URL'
+    'Country', 'Gender', 'Stage Category Name', 'Stage Distance',
+    'GPX File', 'GPX File URL', 'Event Name', 'Event Timing',
+    'Event Thumbnail URL', 'Stage Image URL'
 ]
 
 onMounted(async () => {
@@ -245,7 +360,7 @@ onMounted(async () => {
             htmlContent.value = data.htmlContent || ''
             attachStageGpx.value = data.attachStageGpx || false
             parseTemplate(data.htmlContent || '')
-            
+
             // Restore variable mappings
             if (data.variableMap) {
                 variables.value.forEach(v => {
@@ -274,6 +389,7 @@ const handleTemplateUpload = (e: Event) => {
         const text = e.target?.result as string
         htmlContent.value = text
         parseTemplate(text)
+        toast.success('Template loaded successfully!')
     }
     reader.readAsText(file)
 }
@@ -315,6 +431,9 @@ const parseTemplate = (html: string) => {
                 else if (lower.includes('gender')) guessed = 'Gender'
                 else if (lower.includes('event')) guessed = 'Event Name'
                 else if (lower.includes('time') || lower.includes('date')) guessed = 'Event Timing'
+                else if (lower.includes('gpx') || lower.includes('map_file')) guessed = 'GPX File'
+                else if (lower.includes('category') || (lower.includes('stage') && lower.includes('name'))) guessed = 'Stage Category Name'
+                else if (lower.includes('distance') || lower.includes('dist')) guessed = 'Stage Distance'
 
                 variables.value.push({ name: varName, mappedTo: guessed })
             }
@@ -367,7 +486,7 @@ const saveTemplate = handleSubmit(async (values) => {
 
         const { data } = await axios.post(`/events/${eventId}/email-template`, payload)
         toast.success('Template saved successfully!')
-        
+
         // Update htmlContent to the processed one so uploaded images stay
         htmlContent.value = processedHtml
         parseTemplate(processedHtml)
@@ -377,6 +496,65 @@ const saveTemplate = handleSubmit(async (values) => {
         isLoading.value = false
     }
 })
+
+const sendTestEmail = async () => {
+    if (!testEmailRecipient.value || !testEmailRecipient.value.trim()) {
+        toast.error('Please enter a recipient email address')
+        return
+    }
+
+    if (!subject.value) {
+        toast.error('Please enter a subject first')
+        return
+    }
+
+    if (!htmlContent.value) {
+        toast.error('Please provide HTML template content')
+        return
+    }
+
+    // Check if any variables are unmapped
+    if (variables.value.some(v => !v.mappedTo)) {
+        return toast.error('Please map all variables before sending a test email')
+    }
+
+    // Check if any local images are not uploaded
+    if (localImages.value.some(i => !i.uploadedUrl)) {
+        return toast.error('Please upload or replace all local images before sending a test email')
+    }
+
+    try {
+        isSendingTestEmail.value = true
+
+        const variableMap: Record<string, string> = {}
+        variables.value.forEach(v => {
+            variableMap[`{{${v.name}}}`] = v.mappedTo
+        })
+
+        let processedHtml = htmlContent.value
+        localImages.value.forEach(img => {
+            if (img.uploadedUrl) {
+                processedHtml = processedHtml.replace(img.src, img.uploadedUrl)
+            }
+        })
+
+        await axios.post(`/events/${eventId}/email-template/test`, {
+            testEmail: testEmailRecipient.value.trim(),
+            subject: subject.value,
+            htmlTemplate: processedHtml,
+            variableMap,
+            attachStageGpx: attachStageGpx.value,
+            stageId: testEmailStageId.value || undefined
+        })
+
+        toast.success(`Test email sent to ${testEmailRecipient.value.trim()}`)
+        testEmailDialogOpen.value = false
+    } catch (err: any) {
+        toast.error(err.response?.data?.error || err.response?.data?.message || 'Failed to send test email')
+    } finally {
+        isSendingTestEmail.value = false
+    }
+}
 </script>
 
 <template>
@@ -406,17 +584,18 @@ const saveTemplate = handleSubmit(async (values) => {
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">Subject</label>
                             <input v-model="subject" type="text"
-                                :class="{'border-red-500 focus:ring-red-500': subjectError, 'border-gray-300 focus:ring-primary focus:border-primary': !subjectError}"
-                                class="w-full px-3 py-2 border rounded-md"
-                                placeholder="Email Subject">
+                                :class="{ 'border-red-500 focus:ring-red-500': subjectError, 'border-gray-300 focus:ring-primary focus:border-primary': !subjectError }"
+                                class="w-full px-3 py-2 border rounded-md" placeholder="Email Subject">
                             <span v-if="subjectError" class="text-xs text-red-500 mt-1 block">{{ subjectError }}</span>
                         </div>
                     </div>
 
                     <!-- Options -->
                     <div class="flex items-center gap-2">
-                        <input type="checkbox" id="attachGpx" v-model="attachStageGpx" class="rounded border-gray-300 text-primary focus:ring-primary h-4 w-4">
-                        <label for="attachGpx" class="text-sm text-gray-700">Automatically attach the GPX file for the stage the runner is registered for</label>
+                        <input type="checkbox" id="attachGpx" v-model="attachStageGpx"
+                            class="rounded border-gray-300 text-primary focus:ring-primary h-4 w-4">
+                        <label for="attachGpx" class="text-sm text-gray-700">Automatically attach the GPX file for the
+                            stage the runner is registered for</label>
                     </div>
 
                     <!-- Template Upload -->
@@ -424,7 +603,8 @@ const saveTemplate = handleSubmit(async (values) => {
                         <label class="block text-sm font-medium text-gray-700 mb-1">HTML Template File</label>
                         <input type="file" accept=".html,.htm" @change="handleTemplateUpload"
                             class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20 cursor-pointer">
-                        <span v-if="htmlContentError" class="text-xs text-red-500 mt-1 block">{{ htmlContentError }}</span>
+                        <span v-if="htmlContentError" class="text-xs text-red-500 mt-1 block">{{ htmlContentError
+                        }}</span>
                     </div>
 
                     <div v-if="htmlContent" class="space-y-6 pt-4 border-t">
@@ -432,25 +612,43 @@ const saveTemplate = handleSubmit(async (values) => {
                         <div>
                             <div class="flex border-b mb-4 justify-between items-center">
                                 <div>
-                                    <button @click="activeTab = 'preview'" :class="{'border-b-2 border-primary text-primary font-medium': activeTab === 'preview', 'text-gray-500': activeTab !== 'preview'}" class="px-4 py-2 hover:text-primary">Preview</button>
-                                    <button @click="activeTab = 'code'" :class="{'border-b-2 border-primary text-primary font-medium': activeTab === 'code', 'text-gray-500': activeTab !== 'code'}" class="px-4 py-2 hover:text-primary">Code Editor</button>
+                                    <button type="button" @click="activeTab = 'preview'"
+                                        :class="{ 'border-b-2 border-primary text-primary font-medium': activeTab === 'preview', 'text-gray-500': activeTab !== 'preview' }"
+                                        class="px-4 py-2 hover:text-primary">Preview</button>
+                                    <button type="button" @click="activeTab = 'code'"
+                                        :class="{ 'border-b-2 border-primary text-primary font-medium': activeTab === 'code', 'text-gray-500': activeTab !== 'code' }"
+                                        class="px-4 py-2 hover:text-primary">Code Editor</button>
                                 </div>
-                                <button v-if="activeTab === 'code'" @click="handleCodeEditorVariable" class="text-sm px-3 py-1.5 bg-primary/10 text-primary hover:bg-primary/20 rounded-md font-medium transition-colors flex items-center gap-1.5">
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
-                                    Make Variable from Selection
-                                </button>
-                                <div v-else class="text-sm text-gray-500 flex items-center gap-1 px-2">
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                                    Select text in preview to create a variable
+                                <div v-if="activeTab === 'code'" class="flex items-center gap-2">
+                                    <button type="button" @click="handleCodeEditorVariable"
+                                        class="text-sm px-3 py-1.5 bg-primary/10 text-primary hover:bg-primary/20 rounded-md font-medium transition-colors flex items-center gap-1.5">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path>
+                                        </svg>
+                                        Make Variable from Selection
+                                    </button>
+                                </div>
+                                <div v-else class="text-sm text-gray-500 flex items-center gap-2 px-2">
+                                    <span class="inline-flex items-center gap-1.5 bg-blue-50 text-blue-700 px-2.5 py-1 rounded text-xs font-medium border border-blue-200">
+                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                                        Click any text to edit directly
+                                    </span>
+                                    <span class="text-xs text-gray-400">·</span>
+                                    <span class="text-xs text-gray-500">Select text to make variable</span>
                                 </div>
                             </div>
-                            
-                            <div v-if="activeTab === 'preview'" class="border rounded-lg bg-white overflow-hidden shadow-sm">
-                                <iframe ref="iframeRef" :srcdoc="previewHtml" class="w-full h-[600px] border-0 bg-white" title="Email Preview"></iframe>
+
+                            <div v-if="activeTab === 'preview'"
+                                class="border rounded-lg bg-white overflow-hidden shadow-sm">
+                                <iframe ref="iframeRef" :srcdoc="previewHtml" class="w-full h-[600px] border-0 bg-white"
+                                    title="Email Preview"></iframe>
                             </div>
-                            
+
                             <div v-if="activeTab === 'code'">
-                                <textarea ref="codeEditorRef" v-model="htmlContent" @input="parseTemplate(htmlContent)" class="w-full h-[600px] font-mono text-sm border rounded-lg p-4 focus:ring-primary focus:border-primary" placeholder="Enter HTML template here..."></textarea>
+                                <HtmlCodeEditor ref="codeEditorRef" v-model="htmlContent"
+                                    @input="parseTemplate(htmlContent)" @keydown="handleCodeEditorKeyDown"
+                                    placeholder="Enter HTML template here..." />
                             </div>
                         </div>
                         <!-- Local Images -->
@@ -467,12 +665,13 @@ const saveTemplate = handleSubmit(async (values) => {
                                 <div v-for="(img, idx) in localImages" :key="img.src"
                                     class="flex items-center gap-4 bg-white p-3 rounded border border-blue-100">
                                     <div class="flex-grow truncate">
-                                        <span class="text-sm font-mono text-gray-600 block truncate">{{ img.src
-                                            }}</span>
+                                        <span class="text-sm font-mono text-gray-600 block truncate">
+                                            {{ img.src }}</span>
                                     </div>
                                     <div v-if="!img.uploadedUrl" class="flex items-center gap-2 flex-shrink-0">
                                         <button @click="selectFromMediaLibrary(idx)"
-                                            class="px-3 py-1 bg-primary text-white text-xs rounded shadow-sm hover:bg-primary/90">Select from Media Library</button>
+                                            class="px-3 py-1 bg-primary text-white text-xs rounded shadow-sm hover:bg-primary/90">Select
+                                            from Media Library</button>
                                     </div>
                                     <div v-else
                                         class="text-green-600 text-sm font-medium flex items-center gap-1 flex-shrink-0">
@@ -509,7 +708,14 @@ const saveTemplate = handleSubmit(async (values) => {
                             </div>
                         </div>
 
-                        <div class="flex justify-end pt-4 border-t">
+                        <div class="flex justify-between items-center pt-4 border-t">
+                            <button type="button" @click="openTestEmailDialog"
+                                :disabled="isLoading || isSendingTestEmail"
+                                class="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 flex items-center gap-2 shadow-sm transition-colors cursor-pointer">
+                                <SendIcon class="w-4 h-4 text-primary" />
+                                <span>Send Test Email</span>
+                            </button>
+
                             <button @click="saveTemplate" :disabled="isLoading"
                                 class="px-6 py-2 bg-primary text-white font-medium rounded-lg shadow-sm disabled:opacity-50 flex items-center gap-2 hover:bg-primary/90 transition-colors">
                                 <svg v-if="isLoading" class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
@@ -528,4 +734,59 @@ const saveTemplate = handleSubmit(async (values) => {
         </div>
         <EventSidebar />
     </div>
+
+    <!-- Test Email Dialog -->
+    <Dialog :open="testEmailDialogOpen" @update:open="testEmailDialogOpen = false">
+        <DialogContent class="sm:max-w-[480px]">
+            <DialogHeader>
+                <DialogTitle class="flex items-center gap-2 text-lg">
+                    <SendIcon class="w-5 h-5 text-primary" />
+                    Send Test Email
+                </DialogTitle>
+                <DialogDescription>
+                    Send a test email rendered with sample runner and event data to verify your template layout and
+                    variable replacements.
+                </DialogDescription>
+            </DialogHeader>
+
+            <div class="space-y-4 py-3">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                        Recipient Email Address <span class="text-red-500">*</span>
+                    </label>
+                    <input v-model="testEmailRecipient" type="email" placeholder="e.g. your-email@example.com"
+                        class="w-full px-3 py-2 border rounded-md text-sm border-gray-300 focus:ring-primary focus:border-primary" />
+                </div>
+
+                <div v-if="stages && stages.length > 0">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Sample Stage Data (Optional)</label>
+                    <select v-model="testEmailStageId"
+                        class="w-full px-3 py-2 border rounded-md text-sm border-gray-300 focus:ring-primary focus:border-primary">
+                        <option value="">Default (First available stage)</option>
+                        <option v-for="stg in stages" :key="stg.id" :value="stg.id">
+                            {{ stg.name }}
+                        </option>
+                    </select>
+                    <p class="text-xs text-muted-foreground mt-1">
+                        Used to populate distance, stage category name, and GPX sample data.
+                    </p>
+                </div>
+            </div>
+
+            <DialogFooter>
+                <Button modifier="outline" type="button" @click="testEmailDialogOpen = false">Cancel</Button>
+                <Button type="button" @click="sendTestEmail" :disabled="isSendingTestEmail || !testEmailRecipient"
+                    class="gap-2">
+                    <svg v-if="isSendingTestEmail" class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4">
+                        </circle>
+                        <path class="opacity-75" fill="currentColor"
+                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+                        </path>
+                    </svg>
+                    <span>{{ isSendingTestEmail ? 'Sending...' : 'Send Test' }}</span>
+                </Button>
+            </DialogFooter>
+        </DialogContent>
+    </Dialog>
 </template>

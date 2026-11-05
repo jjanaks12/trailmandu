@@ -786,6 +786,11 @@ export class RunnerController {
 
                 if (!personal?.email) continue;
 
+                const baseUrl = process.env.APP_URL || `${request.protocol}://${request.get('host')}`
+                const gpxFileUrl = stageCategory?.map_file?.file_name
+                    ? `${baseUrl}/resources/gpx/${stageCategory.map_file.file_name}`
+                    : ''
+
                 // Build values map based on what is available
                 const values: Record<string, string> = {
                     'First Name': personal.first_name || '',
@@ -795,7 +800,10 @@ export class RunnerController {
                     'BIB Number': runner.bib || '',
                     'Country': personal.country?.name || '',
                     'Gender': personal.gender?.name || '',
-                    'Stage Distance': stageCategory?.name || '',
+                    'Stage Distance': stageCategory?.distance || stageCategory?.name || '',
+                    'Stage Category Name': stageCategory?.name || '',
+                    'GPX File': gpxFileUrl,
+                    'GPX File URL': gpxFileUrl,
                     'Event Name': event?.name || '',
                     'Event Timing': stageCategory?.start ? moment.utc(stageCategory.start).local().format('DD-MM-YYYY hh:mm a') : '',
                     'Event Thumbnail URL': finalVariableMap?.['Event Thumbnail URL'] || '',

@@ -93,7 +93,13 @@ const { data: pages } = useAsyncData('footer', async () => {
                         {{ (new Date()).getFullYear() }}
                         All Rights Reserved.
                     </p>
-                    <p class="mt-4 md:mt-0">Built for the mountains, by the mountains.</p>
+                    <!-- <p class="mt-4 md:mt-0">Built for the mountains, by the mountains.</p> -->
+                    <p class="mt-4 md:mt-0">
+                        Developed by
+                        <a href="https://janakshrestha.com.np" target="_blank" class="underline text-primary">
+                            Janak Shrestha
+                        </a>.
+                    </p>
                 </div>
             </div>
         </footer>

@@ -1,0 +1,562 @@
+<script lang="ts" setup>
+import { ref, computed, watch, nextTick } from 'vue'
+import hljs from 'highlight.js'
+import {
+    SearchIcon,
+    Maximize2Icon,
+    Minimize2Icon,
+    ChevronUpIcon,
+    ChevronDownIcon,
+    XIcon
+} from 'lucide-vue-next'
+
+const props = withDefaults(defineProps<{
+    modelValue: string
+    placeholder?: string
+    theme?: 'dark' | 'light'
+}>(), {
+    modelValue: '',
+    placeholder: 'Enter HTML template here...',
+    theme: 'dark'
+})
+
+const emit = defineEmits<{
+    (e: 'update:modelValue', val: string): void
+    (e: 'input', val: string): void
+    (e: 'keydown', ev: KeyboardEvent): void
+}>()
+
+const activeTheme = ref<'dark' | 'light'>(props.theme)
+const isFullscreen = ref(false)
+const showFind = ref(false)
+const searchQuery = ref('')
+const searchCaseSensitive = ref(false)
+const activeMatchIndex = ref(0)
+
+const textareaRef = ref<HTMLTextAreaElement | null>(null)
+const preRef = ref<HTMLPreElement | null>(null)
+const gutterRef = ref<HTMLDivElement | null>(null)
+const searchInputRef = ref<HTMLInputElement | null>(null)
+
+const lineCount = computed(() => {
+    return (props.modelValue || '').split('\n').length
+})
+
+interface MatchRange {
+    start: number
+    end: number
+}
+
+// Find matches in the raw text
+const matches = computed<MatchRange[]>(() => {
+    if (!searchQuery.value) return []
+    const text = props.modelValue || ''
+    const query = searchQuery.value
+    const isCase = searchCaseSensitive.value
+    const searchText = isCase ? text : text.toLowerCase()
+    const target = isCase ? query : query.toLowerCase()
+
+    const results: MatchRange[] = []
+    let pos = 0
+    while ((pos = searchText.indexOf(target, pos)) !== -1) {
+        results.push({ start: pos, end: pos + target.length })
+        pos += target.length
+    }
+    return results
+})
+
+const highlightedHtml = computed(() => {
+    const raw = props.modelValue || ''
+    if (!raw) return ''
+    try {
+        let code = hljs.highlight(raw, { language: 'html' }).value
+        
+        // Highlight search matches safely in text nodes (outside HTML tags)
+        if (searchQuery.value && searchQuery.value.trim().length > 0) {
+            const escapedQuery = searchQuery.value.replace(/[.*+?^$()|[\]\\]/g, '\\$&')
+            const flags = searchCaseSensitive.value ? 'g' : 'gi'
+            
+            // Matches text between > and <
+            code = code.replace(/(>)([^<]*?)(<)/g, (full, p1, text, p3) => {
+                const replaced = text.replace(new RegExp(escapedQuery, flags), (m: string) => {
+                    return `<mark class="search-highlight">${m}</mark>`
+                })
+                return p1 + replaced + p3
+            })
+        }
+
+        // Highlight handlebars variables {{variable}} with an amber badge
+        code = code.replace(/\{\{([#^/]?[\s\S]*?)\}\}/g, (match) => `<span class="template-var">${match}</span>`)
+
+        // Ensure trailing newline renders matching height in <pre>
+        if (raw.endsWith('\n')) {
+            code += '<br>&nbsp;'
+        }
+        return code
+    } catch (e) {
+        return raw.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    }
+})
+
+const handleInput = (e: Event) => {
+    const target = e.target as HTMLTextAreaElement
+    emit('update:modelValue', target.value)
+    emit('input', target.value)
+    syncScroll()
+}
+
+const handleScroll = () => {
+    syncScroll()
+}
+
+const syncScroll = () => {
+    if (!textareaRef.value) return
+    const { scrollTop, scrollLeft } = textareaRef.value
+    if (preRef.value) {
+        preRef.value.scrollTop = scrollTop
+        preRef.value.scrollLeft = scrollLeft
+    }
+    if (gutterRef.value) {
+        gutterRef.value.scrollTop = scrollTop
+    }
+}
+
+const openFind = () => {
+    showFind.value = true
+    nextTick(() => {
+        searchInputRef.value?.focus()
+        searchInputRef.value?.select()
+    })
+}
+
+const closeFind = () => {
+    showFind.value = false
+    textareaRef.value?.focus()
+}
+
+const nextMatch = () => {
+    if (matches.value.length === 0) return
+    activeMatchIndex.value = (activeMatchIndex.value + 1) % matches.value.length
+    scrollToMatch(matches.value[activeMatchIndex.value])
+}
+
+const prevMatch = () => {
+    if (matches.value.length === 0) return
+    activeMatchIndex.value = (activeMatchIndex.value - 1 + matches.value.length) % matches.value.length
+    scrollToMatch(matches.value[activeMatchIndex.value])
+}
+
+const scrollToMatch = (match: MatchRange) => {
+    if (!textareaRef.value || !match) return
+    textareaRef.value.focus()
+    textareaRef.value.setSelectionRange(match.start, match.end)
+
+    // Calculate approximate vertical line offset to scroll into view
+    const textBefore = props.modelValue.substring(0, match.start)
+    const lineIndex = textBefore.split('\n').length - 1
+    const targetScrollTop = Math.max(0, lineIndex * 20 - 120) // 20px is line-height
+    textareaRef.value.scrollTop = targetScrollTop
+    syncScroll()
+}
+
+watch(matches, (newMatches) => {
+    if (newMatches.length > 0) {
+        if (activeMatchIndex.value >= newMatches.length) {
+            activeMatchIndex.value = 0
+        }
+        scrollToMatch(newMatches[activeMatchIndex.value])
+    } else {
+        activeMatchIndex.value = 0
+    }
+})
+
+const toggleFullscreen = () => {
+    isFullscreen.value = !isFullscreen.value
+    nextTick(syncScroll)
+}
+
+const handleKeyDown = (e: KeyboardEvent) => {
+    // Cmd+F or Ctrl+F to open Find
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) {
+        e.preventDefault()
+        openFind()
+        return
+    }
+
+    // Escape to close Find or exit Fullscreen
+    if (e.key === 'Escape') {
+        if (showFind.value) {
+            e.preventDefault()
+            closeFind()
+            return
+        }
+        if (isFullscreen.value) {
+            e.preventDefault()
+            isFullscreen.value = false
+            return
+        }
+    }
+
+    // F11 to toggle fullscreen
+    if (e.key === 'F11') {
+        e.preventDefault()
+        toggleFullscreen()
+        return
+    }
+
+    emit('keydown', e)
+}
+
+// Watch modelValue changes to keep scroll in sync when formatted
+watch(() => props.modelValue, () => {
+    nextTick(syncScroll)
+})
+
+// Expose textarea properties so parent can access selectionStart, selectionEnd, focus
+defineExpose({
+    get selectionStart() { return textareaRef.value?.selectionStart ?? 0 },
+    set selectionStart(val: number) { if (textareaRef.value) textareaRef.value.selectionStart = val },
+    get selectionEnd() { return textareaRef.value?.selectionEnd ?? 0 },
+    set selectionEnd(val: number) { if (textareaRef.value) textareaRef.value.selectionEnd = val },
+    focus() { textareaRef.value?.focus() },
+    openFind,
+    toggleFullscreen,
+    textarea: textareaRef
+})
+</script>
+
+<template>
+    <div
+        :class="[
+            `theme-${activeTheme}`,
+            isFullscreen ? 'fixed inset-0 z-[9999] w-screen h-screen rounded-none border-0' : 'relative w-full h-[600px] rounded-lg border'
+        ]"
+        class="code-editor-container shadow-sm overflow-hidden flex flex-col font-mono text-xs"
+    >
+        <!-- Editor Header Bar -->
+        <div class="code-editor-header flex items-center justify-between px-3 py-1.5 border-b select-none text-[11px] shrink-0">
+            <div class="flex items-center gap-2">
+                <span class="inline-flex items-center gap-1.5 font-semibold uppercase tracking-wider text-[10px]">
+                    <span class="w-2 h-2 rounded-full" :class="activeTheme === 'dark' ? 'bg-amber-400' : 'bg-primary'"></span>
+                    HTML Code
+                </span>
+                <span class="opacity-40">|</span>
+                <span class="opacity-60">{{ lineCount }} lines</span>
+                <span class="opacity-40">·</span>
+                <span class="opacity-60">{{ modelValue.length }} chars</span>
+            </div>
+
+            <div class="flex items-center gap-2">
+                <!-- Find Button -->
+                <button
+                    type="button"
+                    @click="showFind ? closeFind() : openFind()"
+                    class="px-2 py-0.5 rounded text-[11px] font-medium transition-colors border cursor-pointer flex items-center gap-1"
+                    :class="[
+                        showFind
+                            ? 'bg-amber-500/20 text-amber-500 border-amber-500/40'
+                            : (activeTheme === 'dark' ? 'bg-[#353b45] hover:bg-[#3e4451] text-gray-200 border-gray-600' : 'bg-gray-100 hover:bg-gray-200 text-gray-700 border-gray-300')
+                    ]"
+                    title="Find text in code (Cmd+F / Ctrl+F)"
+                >
+                    <SearchIcon class="w-3.5 h-3.5" />
+                    <span>Find</span>
+                </button>
+
+                <!-- Theme Switcher -->
+                <button
+                    type="button"
+                    @click="activeTheme = activeTheme === 'dark' ? 'light' : 'dark'"
+                    class="px-2 py-0.5 rounded text-[11px] font-medium transition-colors border cursor-pointer"
+                    :class="activeTheme === 'dark' ? 'bg-[#353b45] hover:bg-[#3e4451] text-gray-200 border-gray-600' : 'bg-gray-100 hover:bg-gray-200 text-gray-700 border-gray-300'"
+                    :title="`Switch to ${activeTheme === 'dark' ? 'Light' : 'Dark'} mode`"
+                >
+                    <span v-if="activeTheme === 'dark'">☀️ Light</span>
+                    <span v-else>🌙 Dark</span>
+                </button>
+
+                <!-- Fullscreen Button -->
+                <button
+                    type="button"
+                    @click="toggleFullscreen"
+                    class="px-2 py-0.5 rounded text-[11px] font-medium transition-colors border cursor-pointer flex items-center gap-1"
+                    :class="[
+                        isFullscreen
+                            ? 'bg-primary text-white border-primary shadow-sm'
+                            : (activeTheme === 'dark' ? 'bg-[#353b45] hover:bg-[#3e4451] text-gray-200 border-gray-600' : 'bg-gray-100 hover:bg-gray-200 text-gray-700 border-gray-300')
+                    ]"
+                    :title="isFullscreen ? 'Exit Full Screen (Esc)' : 'Full Screen (F11)'"
+                >
+                    <Minimize2Icon v-if="isFullscreen" class="w-3.5 h-3.5" />
+                    <Maximize2Icon v-else class="w-3.5 h-3.5" />
+                    <span>{{ isFullscreen ? 'Exit Full Screen' : 'Full Screen' }}</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Floating Find Bar -->
+        <div
+            v-if="showFind"
+            class="find-bar absolute top-9 right-4 z-20 flex items-center gap-1.5 p-1.5 rounded-lg border shadow-lg backdrop-blur"
+            :class="activeTheme === 'dark' ? 'bg-[#21252b]/95 border-gray-700 text-gray-200' : 'bg-white/95 border-gray-300 text-gray-800'"
+        >
+            <SearchIcon class="w-3.5 h-3.5 opacity-50 ml-1 shrink-0" />
+            <input
+                ref="searchInputRef"
+                v-model="searchQuery"
+                type="text"
+                placeholder="Find in code..."
+                @keydown.enter.prevent="e => e.shiftKey ? prevMatch() : nextMatch()"
+                @keydown.esc.prevent="closeFind"
+                class="px-2 py-1 text-xs rounded border border-transparent focus:border-primary outline-none bg-transparent w-44"
+            />
+
+            <!-- Case sensitive toggle -->
+            <button
+                type="button"
+                @click="searchCaseSensitive = !searchCaseSensitive"
+                class="px-1.5 py-0.5 rounded text-[10px] font-bold border transition-colors cursor-pointer"
+                :class="searchCaseSensitive ? 'bg-primary text-white border-primary' : 'opacity-60 hover:opacity-100 border-transparent'"
+                title="Match Case"
+            >
+                Aa
+            </button>
+
+            <!-- Match counter -->
+            <span class="text-[11px] px-1 font-mono shrink-0" :class="matches.length === 0 && searchQuery ? 'text-red-400' : 'opacity-60'">
+                <template v-if="matches.length > 0">
+                    {{ activeMatchIndex + 1 }}/{{ matches.length }}
+                </template>
+                <template v-else-if="searchQuery">
+                    0/0
+                </template>
+            </span>
+
+            <!-- Prev / Next buttons -->
+            <button
+                type="button"
+                @click="prevMatch"
+                :disabled="matches.length === 0"
+                class="p-1 rounded hover:bg-black/10 dark:hover:bg-white/10 disabled:opacity-30 cursor-pointer"
+                title="Previous match (Shift+Enter)"
+            >
+                <ChevronUpIcon class="w-3.5 h-3.5" />
+            </button>
+            <button
+                type="button"
+                @click="nextMatch"
+                :disabled="matches.length === 0"
+                class="p-1 rounded hover:bg-black/10 dark:hover:bg-white/10 disabled:opacity-30 cursor-pointer"
+                title="Next match (Enter)"
+            >
+                <ChevronDownIcon class="w-3.5 h-3.5" />
+            </button>
+
+            <!-- Close Find -->
+            <button
+                type="button"
+                @click="closeFind"
+                class="p-1 rounded hover:bg-black/10 dark:hover:bg-white/10 opacity-70 hover:opacity-100 cursor-pointer ml-0.5"
+                title="Close (Esc)"
+            >
+                <XIcon class="w-3.5 h-3.5" />
+            </button>
+        </div>
+
+        <!-- Editor Body -->
+        <div class="code-editor-body relative flex-grow overflow-hidden flex">
+            <!-- Line Numbers Gutter -->
+            <div
+                ref="gutterRef"
+                class="code-editor-gutter select-none py-3 px-2 text-right border-r font-mono text-xs overflow-hidden shrink-0"
+                style="width: 48px; line-height: 20px;"
+            >
+                <div v-for="n in lineCount" :key="n" class="opacity-40 leading-[20px]">{{ n }}</div>
+            </div>
+
+            <!-- Code & Textarea Area -->
+            <div class="relative flex-grow overflow-hidden h-full">
+                <!-- Highlighted code (underneath) -->
+                <pre
+                    ref="preRef"
+                    aria-hidden="true"
+                    class="code-editor-pre absolute inset-0 m-0 pointer-events-none overflow-hidden"
+                ><code class="hljs language-html" v-html="highlightedHtml"></code></pre>
+
+                <!-- Editable transparent textarea (on top) -->
+                <textarea
+                    ref="textareaRef"
+                    :value="modelValue"
+                    @input="handleInput"
+                    @scroll="handleScroll"
+                    @keydown="handleKeyDown"
+                    spellcheck="false"
+                    autocapitalize="off"
+                    autocomplete="off"
+                    :placeholder="placeholder"
+                    class="code-editor-textarea absolute inset-0 m-0 w-full h-full resize-none overflow-auto"
+                ></textarea>
+            </div>
+        </div>
+    </div>
+</template>
+
+<style scoped>
+/* Base Pre & Textarea matching */
+.code-editor-pre,
+.code-editor-textarea {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
+    font-size: 13px !important;
+    line-height: 20px !important;
+    tab-size: 2 !important;
+    letter-spacing: 0px !important;
+    white-space: pre !important;
+    word-break: normal !important;
+    word-wrap: normal !important;
+    padding: 12px 16px !important;
+    box-sizing: border-box !important;
+    border: none !important;
+    outline: none !important;
+}
+
+.code-editor-pre code {
+    font-family: inherit !important;
+    font-size: inherit !important;
+    line-height: inherit !important;
+    padding: 0 !important;
+    background: transparent !important;
+}
+
+.code-editor-textarea {
+    background: transparent !important;
+    color: transparent !important;
+    -webkit-text-fill-color: transparent !important;
+}
+
+/* Search Highlights */
+:deep(.search-highlight) {
+    background-color: rgba(234, 179, 8, 0.45);
+    color: inherit;
+    border-radius: 2px;
+    padding: 0 1px;
+}
+
+/* Dark Theme */
+.theme-dark {
+    background-color: #282c34;
+    color: #abb2bf;
+    border-color: #3e4451;
+}
+.theme-dark .code-editor-header {
+    background-color: #21252b;
+    border-color: #181a1f;
+    color: #abb2bf;
+}
+.theme-dark .code-editor-gutter {
+    background-color: #21252b;
+    border-color: #181a1f;
+    color: #5c6370;
+}
+.theme-dark .code-editor-textarea {
+    caret-color: #f06723;
+}
+.theme-dark .code-editor-textarea::selection {
+    background-color: rgba(64, 120, 242, 0.4);
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+}
+.theme-dark :deep(.hljs) {
+    background: transparent;
+    color: #abb2bf;
+}
+.theme-dark :deep(.hljs-comment),
+.theme-dark :deep(.hljs-quote) {
+    color: #5c6370;
+    font-style: italic;
+}
+.theme-dark :deep(.hljs-tag) {
+    color: #abb2bf;
+}
+.theme-dark :deep(.hljs-name) {
+    color: #e06c75;
+    font-weight: 600;
+}
+.theme-dark :deep(.hljs-attr) {
+    color: #d19a66;
+}
+.theme-dark :deep(.hljs-string) {
+    color: #98c379;
+}
+.theme-dark :deep(.hljs-meta),
+.theme-dark :deep(.hljs-keyword) {
+    color: #c678dd;
+}
+.theme-dark :deep(.template-var) {
+    background: rgba(245, 158, 11, 0.22);
+    color: #fbbf24;
+    font-weight: 700;
+    padding: 1px 4px;
+    border-radius: 3px;
+    border: 1px solid rgba(245, 158, 11, 0.5);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+}
+
+/* Light Theme */
+.theme-light {
+    background-color: #fafafa;
+    color: #383a42;
+    border-color: #e5e7eb;
+}
+.theme-light .code-editor-header {
+    background-color: #f3f4f6;
+    border-color: #e5e7eb;
+    color: #374151;
+}
+.theme-light .code-editor-gutter {
+    background-color: #f3f4f6;
+    border-color: #e5e7eb;
+    color: #9ca3af;
+}
+.theme-light .code-editor-textarea {
+    caret-color: #f06723;
+}
+.theme-light .code-editor-textarea::selection {
+    background-color: rgba(64, 120, 242, 0.25);
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+}
+.theme-light :deep(.hljs) {
+    background: transparent;
+    color: #383a42;
+}
+.theme-light :deep(.hljs-comment),
+.theme-light :deep(.hljs-quote) {
+    color: #a0a1a7;
+    font-style: italic;
+}
+.theme-light :deep(.hljs-tag) {
+    color: #383a42;
+}
+.theme-light :deep(.hljs-name) {
+    color: #e45649;
+    font-weight: 600;
+}
+.theme-light :deep(.hljs-attr) {
+    color: #986801;
+}
+.theme-light :deep(.hljs-string) {
+    color: #50a14f;
+}
+.theme-light :deep(.hljs-meta),
+.theme-light :deep(.hljs-keyword) {
+    color: #a626a4;
+}
+.theme-light :deep(.template-var) {
+    background: rgba(245, 158, 11, 0.18);
+    color: #b45309;
+    font-weight: 700;
+    padding: 1px 4px;
+    border-radius: 3px;
+    border: 1px solid rgba(245, 158, 11, 0.4);
+}
+</style>
