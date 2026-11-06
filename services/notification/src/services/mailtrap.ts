@@ -29,6 +29,26 @@ export type SendEmailOptions = {
     };
 };
 
+function isBase64String(val: any): boolean {
+    if (typeof val !== 'string') return false;
+    const trimmed = val.trim();
+    if (trimmed.length === 0 || trimmed.length % 4 !== 0) return false;
+    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(trimmed)) return false;
+    try {
+        return Buffer.from(trimmed, 'base64').toString('base64') === trimmed;
+    } catch {
+        return false;
+    }
+}
+
+function ensureBase64(content: any): string {
+    if (!content) return '';
+    if (Buffer.isBuffer(content)) return content.toString('base64');
+    if (typeof content !== 'string') return Buffer.from(String(content)).toString('base64');
+    if (isBase64String(content)) return content.trim();
+    return Buffer.from(content).toString('base64');
+}
+
 export const useMailTrap = () => {
     const mailtrap = new MailtrapClient({
         token: process.env.MAILTRAP_TOKEN || "",
@@ -125,8 +145,8 @@ export const useMailTrap = () => {
                 if (att.content) {
                     normalizedAttachments.push({
                         filename: att.filename,
-                        content: att.content,
-                        type: att.type,
+                        content: ensureBase64(att.content),
+                        type: att.type || att.contentType || 'application/octet-stream',
                         disposition: att.disposition || 'attachment',
                         content_id: att.content_id
                     });
@@ -134,6 +154,7 @@ export const useMailTrap = () => {
                     normalizedAttachments.push({
                         filename: att.filename || path.basename(att.path),
                         content: fsSync.readFileSync(att.path).toString('base64'),
+                        type: att.type || att.contentType || 'application/octet-stream',
                         disposition: att.disposition || 'attachment'
                     });
                 }
@@ -141,14 +162,16 @@ export const useMailTrap = () => {
         }
 
         if (options.icalEvent && options.icalEvent.content) {
-            normalizedAttachments.push({
-                filename: options.icalEvent.filename || 'invite.ics',
-                content: Buffer.isBuffer(options.icalEvent.content)
-                    ? options.icalEvent.content
-                    : Buffer.from(options.icalEvent.content).toString('base64'),
-                type: 'text/calendar',
-                disposition: 'attachment'
-            });
+            const icsFilename = options.icalEvent.filename || 'invite.ics';
+            const alreadyAttached = normalizedAttachments.some(a => a.filename === icsFilename);
+            if (!alreadyAttached) {
+                normalizedAttachments.push({
+                    filename: icsFilename,
+                    content: ensureBase64(options.icalEvent.content),
+                    type: 'text/calendar',
+                    disposition: 'attachment'
+                });
+            }
         }
 
         return await mailtrap.send({

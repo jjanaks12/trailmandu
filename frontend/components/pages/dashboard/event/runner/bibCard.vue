@@ -64,7 +64,7 @@ const formatBibDistance = (runner: EventRunner) => {
 }
 
 const formatBibLocation = (runner: EventRunner) => {
-    return runner.stage_category?.location || runner.stage?.location || currentTrailRace.value?.location || currentTrailRace.value?.address || ''
+    return runner.stage?.location || runner.stage_category?.location || currentTrailRace.value?.location || currentTrailRace.value?.address || ''
 }
 
 const formatBibDate = (runner: EventRunner, formatStr = 'MMM DD, YYYY') => {

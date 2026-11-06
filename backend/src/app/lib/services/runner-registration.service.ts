@@ -390,9 +390,10 @@ export class RunnerRegistrationService {
             senderEmail: "info@trailmandu.com",
             attachments: [
                 {
-                    content: calendarContent,
+                    content: Buffer.from(calendarContent).toString('base64'),
                     filename: icsFilename,
-                    contentType: "text/calendar; charset=UTF-8; method=REQUEST"
+                    type: "text/calendar; charset=UTF-8; method=REQUEST",
+                    disposition: "attachment"
                 }
             ],
             icalEvent: {
