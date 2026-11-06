@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CheckIcon, ChevronUpIcon, CopyIcon, EllipsisVerticalIcon, MailCheckIcon, MailXIcon, MailIcon, LoaderIcon } from 'lucide-vue-next'
+import { CheckIcon, ChevronUpIcon, CopyIcon, EllipsisVerticalIcon, MailCheckIcon, MailXIcon, MailIcon, LoaderIcon, UtensilsIcon } from 'lucide-vue-next'
 import moment from 'moment'
 import { humanize } from '~/lib/filters'
 import { getDuration } from '~/lib/filters/runner'
@@ -105,6 +105,28 @@ const sendBriefingEmail = async () => {
     }
 }
 
+const isLunchAddon = (name?: string) => {
+    if (!name) return false
+    const lower = name.toLowerCase()
+    return lower.includes('lunch') || lower.includes('meal') || lower.includes('food') || lower.includes('dal bhat') || lower.includes('khana')
+}
+
+const lunchAddons = computed(() => {
+    return props.runner.addons?.filter(a => isLunchAddon(a.addon?.name)) || []
+})
+
+const otherAddons = computed(() => {
+    return props.runner.addons?.filter(a => !isLunchAddon(a.addon?.name)) || []
+})
+
+const hasLunch = computed(() => {
+    return Boolean(props.runner.want_lunch || lunchAddons.value.length > 0)
+})
+
+const lunchAddonNames = computed(() => {
+    return lunchAddons.value.map(a => a.addon?.name).filter(Boolean) as string[]
+})
+
 </script>
 
 <template>
@@ -178,8 +200,25 @@ const sendBriefingEmail = async () => {
                 </ul>
             </TableCell>
             <TableCell>
-                <Badge variant="success" v-if="runner.want_lunch">Yes</Badge>
-                <Badge variant="destructive" v-else>No</Badge>
+                <div class="flex flex-col gap-1 items-start">
+                    <template v-if="hasLunch">
+                        <Badge variant="success" class="text-xs">
+                            <UtensilsIcon class="size-3 mr-1 inline" />
+                            Yes
+                        </Badge>
+                        <span v-for="name in lunchAddonNames" :key="name" class="text-[11px] text-gray-500 font-normal">
+                            {{ name }}
+                        </span>
+                    </template>
+                    <template v-else>
+                        <Badge variant="destructive" class="text-xs">No</Badge>
+                    </template>
+                    <div v-if="otherAddons.length > 0" class="flex flex-wrap gap-1 mt-0.5">
+                        <Badge v-for="addon in otherAddons" :key="addon.id" variant="outline" class="text-[10px] text-gray-500 font-normal">
+                            + {{ addon.addon?.name }}
+                        </Badge>
+                    </div>
+                </div>
             </TableCell>
             <TableCell>
                 <div class="flex gap-2 items-center justify-end">

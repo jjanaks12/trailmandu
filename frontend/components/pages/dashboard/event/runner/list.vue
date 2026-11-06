@@ -40,8 +40,20 @@ const paymentStatusOpt = ref<PaymentStatus | null>(null)
 const paymentTypeOpt = ref<PaymentType | null>(null)
 const genderOpt = ref<Gender | null>(null)
 const briefingStatusOpt = ref<'briefed' | 'not_briefed' | null>(null)
+const lunchOpt = ref<'with_lunch' | 'without_lunch' | null>(null)
 const searchText = shallowRef('')
 const stageCategoryID = ref<string | null>(null)
+
+const isLunchAddon = (name?: string) => {
+    if (!name) return false
+    const lower = name.toLowerCase()
+    return lower.includes('lunch') || lower.includes('meal') || lower.includes('food') || lower.includes('dal bhat') || lower.includes('khana')
+}
+
+const hasRunnerLunch = (runner: EventRunner | null) => {
+    if (!runner) return false
+    return Boolean(runner.want_lunch || runner.addons?.some(a => isLunchAddon(a.addon?.name)))
+}
 
 const selectedRunner = ref<EventRunner | null>(null)
 const { genders } = storeToRefs(useAppStore())
@@ -73,6 +85,7 @@ const fetch = async () => {
                 stage_category: stageCategoryID.value,
                 payment_method: paymentTypeOpt.value,
                 gender: genderOpt.value?.id,
+                lunch: lunchOpt.value,
                 briefing_sent: briefingStatusOpt.value === 'briefed' ? 'true' : (briefingStatusOpt.value === 'not_briefed' ? 'false' : undefined),
                 email_sent: briefingStatusOpt.value === 'briefed' ? 'true' : (briefingStatusOpt.value === 'not_briefed' ? 'false' : undefined),
                 show_all: true
@@ -113,6 +126,7 @@ const reset = () => {
     paymentTypeOpt.value = null
     genderOpt.value = null
     briefingStatusOpt.value = null
+    lunchOpt.value = null
     runners.value = []
     fetch()
 }
@@ -142,11 +156,13 @@ const downloadCSV = async () => {
 
     let CSVContent = "data:text/csv;charset=utf-8,"
 
-    CSVContent += "Name,BIB,email,phone,gender,age,category,stage,country,emergency contact,emergency contact no,want lunch, paid, shirt size\n"
+    CSVContent += "Name,BIB,email,phone,gender,age,category,stage,country,emergency contact,emergency contact no,want lunch,addons,paid,shirt size\n"
 
     runners.value.forEach((runner) => {
         const age = moment().diff(runner.personal.date_of_birth, 'years')
-        CSVContent += `${[runner.personal.first_name, runner.personal.middle_name, runner.personal.last_name].join(" ")},${runner.bib},${runner.personal.email},${runner.personal.phone_number},${runner.personal.gender.name},${age},${runner?.stage_category?.name ?? ''},${runner?.stage?.name ?? ''},${runner?.personal?.country?.name ?? ''},${runner?.emergency_contact_name},${runner?.emergency_contact_no},${runner.want_lunch},${runner.payments[0]?.status ?? ''},${runner?.tshirt_size?.name ?? ''},\n`
+        const lunchStatus = hasRunnerLunch(runner) ? 'Yes' : 'No'
+        const addonsList = runner.addons?.map((a: any) => a.addon?.name).filter(Boolean).join('; ') || ''
+        CSVContent += `"${[runner.personal.first_name, runner.personal.middle_name, runner.personal.last_name].filter(Boolean).join(" ")}",${runner.bib},${runner.personal.email},${runner.personal.phone_number},${runner.personal.gender.name},${age},"${runner?.stage_category?.name ?? ''}","${runner?.stage?.name ?? ''}","${runner?.personal?.country?.name ?? ''}","${runner?.emergency_contact_name}","${runner?.emergency_contact_no}",${lunchStatus},"${addonsList}",${runner.payments[0]?.status ?? ''},${runner?.tshirt_size?.name ?? ''},\n`
     })
 
     const link = document.createElement('a')
@@ -155,7 +171,7 @@ const downloadCSV = async () => {
     link.click()
 }
 
-watch([paymentStatusOpt, stageID, stageCategoryID, paymentTypeOpt, genderOpt, briefingStatusOpt], fetch, { immediate: true })
+watch([paymentStatusOpt, stageID, stageCategoryID, paymentTypeOpt, genderOpt, briefingStatusOpt, lunchOpt], fetch, { immediate: true })
 watchDebounced(searchText, fetch, { debounce: 1000 })
 
 onMounted(async () => {
@@ -243,6 +259,18 @@ onUnmounted(() => {
                             </SelectContent>
                         </Select>
                         <Button size="sm" modifier="link" @click="briefingStatusOpt = null" v-if="briefingStatusOpt">X</Button>
+                        <Select v-model="lunchOpt" :disabled="isLoading">
+                            <SelectTrigger class="w-[140px]" size="sm">
+                                Lunch:
+                                <SelectValue placeholder="All" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem :value="null">All</SelectItem>
+                                <SelectItem value="with_lunch">With Lunch</SelectItem>
+                                <SelectItem value="without_lunch">No Lunch</SelectItem>
+                            </SelectContent>
+                        </Select>
+                        <Button size="sm" modifier="link" @click="lunchOpt = null" v-if="lunchOpt">X</Button>
                     </div>
                     <InputGroup size="sm">
                         <InputGroupInput class="search-input" v-model="searchText" placeholder="Search by name or bib"
@@ -410,6 +438,20 @@ onUnmounted(() => {
                     <div class="flex justify-between">
                         <strong>Emergency contact</strong>
                         <span>{{ selectedRunner?.emergency_contact_no }}</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <strong>Lunch</strong>
+                        <Badge :variant="hasRunnerLunch(selectedRunner) ? 'success' : 'destructive'">
+                            {{ hasRunnerLunch(selectedRunner) ? 'Yes' : 'No' }}
+                        </Badge>
+                    </div>
+                    <div class="flex justify-between" v-if="selectedRunner?.addons && selectedRunner.addons.length > 0">
+                        <strong>Add-ons</strong>
+                        <div class="text-right space-y-1">
+                            <span v-for="addon in selectedRunner.addons" :key="addon.id" class="block">
+                                {{ addon.addon?.name }} <em class="text-xs text-gray-500 not-italic" v-if="addon.amount_paid">(Rs. {{ addon.amount_paid }})</em>
+                            </span>
+                        </div>
                     </div>
                 </div>
                 <strong class="text-gray-300 uppercase tracking-widest font-medium">Payment Information</strong>

@@ -21,6 +21,7 @@ const isLoading = ref(false)
 const form = useTemplateRef<FormContext>('form')
 
 const availabeStageCategoryList = computed(() => props.stageList.find(stage => stage.id === props.runner?.stage_id)?.stage_categories)
+const runnerAddons = computed(() => props.runner?.addons || [])
 
 const handleSumit = async (values: any) => {
     if (!props.runner)
@@ -176,13 +177,18 @@ onMounted(init)
                 <Checkbox :model-value="value" @update:model-value="handleChange" :default-value="false" />
                 <div class="grow flex flex-col gap-2">
                     <span class="font-medium text-gray-700">I want to order lunch after race.</span>
-                    <em class="text-sm font-light not-italic">Please Note*: Lunch is only provided to
-                        those who pre- ordered and pre-paid which is 480 per person and not included in
-                        registration fee.</em>
+                    <em class="text-sm font-light not-italic text-gray-500">Lunch is provided to runners who pre-ordered and pre-paid with their registration or add-ons.</em>
                 </div>
             </Label>
             <ErrorMessage class="error__message" name="description.want_lunch" />
         </Field>
+        <div v-if="runnerAddons.length > 0" class="p-3 bg-gray-50 border rounded-lg text-sm space-y-1">
+            <span class="font-medium text-xs text-gray-500 uppercase tracking-wider block">Registered Add-ons:</span>
+            <div v-for="addon in runnerAddons" :key="addon.id" class="flex justify-between text-xs text-gray-700">
+                <span>{{ addon.addon?.name }}</span>
+                <span class="font-medium">Rs. {{ addon.amount_paid }}</span>
+            </div>
+        </div>
         <div class="text-right">
             <Button type="submit">
                 <LoaderIcon v-if="isLoading" class="mr-2 animate-spin" />

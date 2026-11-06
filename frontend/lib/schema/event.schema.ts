@@ -66,11 +66,12 @@ export const trailRaceRunner = Y.object({
         then: schema => schema.required('Payment screenshot is required for QR payment').min(1, 'Payment screenshot is required for QR payment'),
         otherwise: schema => schema.optional().nullable()
     }).label("Payment screenshot"),
+    selected_addons: Y.array().of(Y.string().required()).optional().label("Selected addons"),
     description: Y.object({
         club_name: Y.string().label('Club name'),
         emergency_contact_name: Y.string().required().label('Emergency Contact name'),
         emergency_contact_phone: Y.string().required().label('Emergency Contact number'),
-        want_lunch: Y.boolean().label('Want lunch'),
+        want_lunch: Y.boolean().optional().nullable().label('Want lunch'),
     }).required().label('Description'),
     liabilities: Y.boolean()
         .required('You must agree and make sure to read the liabilities carefully')

@@ -208,6 +208,26 @@ export class RunnerRegistrationService {
         const createdRunners: any[] = []
         let lastPayment: any = null
 
+        const selectedAddonIds: string[] = Array.isArray(validationData.selected_addons)
+            ? validationData.selected_addons
+            : []
+
+        const chosenAddons = selectedAddonIds.length > 0
+            ? await prisma.eventAddon.findMany({
+                where: { id: { in: selectedAddonIds } }
+            })
+            : []
+
+        const hasLunchAddon = chosenAddons.some(a =>
+            a.name?.toLowerCase().includes('lunch') ||
+            a.name?.toLowerCase().includes('meal') ||
+            a.name?.toLowerCase().includes('food') ||
+            a.name?.toLowerCase().includes('dal bhat') ||
+            a.name?.toLowerCase().includes('khana')
+        )
+
+        const addonsTotal = chosenAddons.reduce((sum, a) => sum + Number(a.price), 0)
+
         for (const category of matchedCategories) {
             const existingRunner = await prisma.eventRunner.findFirst({
                 where: {
@@ -231,7 +251,7 @@ export class RunnerRegistrationService {
                     personal_id: personalId,
                     stage_id: category.stage_id,
                     stage_category_id: category.id,
-                    want_lunch: validationData.description?.want_lunch ?? false,
+                    want_lunch: validationData.description?.want_lunch ?? hasLunchAddon,
                     club_name: validationData.description?.club_name ?? "",
                     emergency_contact_name: validationData.description?.emergency_contact_name ?? "",
                     emergency_contact_no: validationData.description?.emergency_contact_phone ?? "",
@@ -240,6 +260,17 @@ export class RunnerRegistrationService {
                 }
             })
             createdRunners.push(runner)
+
+            // Persist RunnerAddon records
+            for (const addon of chosenAddons) {
+                await prisma.runnerAddon.create({
+                    data: {
+                        runner_id: runner.id,
+                        addon_id: addon.id,
+                        amount_paid: Number(addon.price)
+                    }
+                })
+            }
 
             let paymentAmount = 0
             let shouldCreatePayment = false
@@ -253,7 +284,7 @@ export class RunnerRegistrationService {
                         }
                     })
                     if (seasonPassPayment) {
-                        paymentAmount = Number(seasonPassPayment.amount)
+                        paymentAmount = Number(seasonPassPayment.amount) + addonsTotal
                         shouldCreatePayment = true
                     }
                 } else {
@@ -268,7 +299,7 @@ export class RunnerRegistrationService {
                     }
                 })
                 if (stageCategoryPayment) {
-                    paymentAmount = Number(stageCategoryPayment.amount)
+                    paymentAmount = Number(stageCategoryPayment.amount) + addonsTotal
                     shouldCreatePayment = true
                 }
             }

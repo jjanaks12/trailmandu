@@ -228,6 +228,7 @@ export type EventRunner = {
     runner_attendances: RunnerAttendance[]
     season_pass_id?: string
     season_pass?: SeasonPass
+    addons?: RunnerAddon[]
     email_sent?: boolean
     email_sent_at?: string | null
     briefing_sent?: boolean
@@ -554,6 +555,16 @@ export type EventAddon = {
     apply_to_all: boolean
     event_id: string
     stages?: Stage[]
+}
+
+export type RunnerAddon = {
+    id: string
+    amount_paid: string | number
+    created_at?: string
+    updated_at?: string
+    runner_id: string
+    addon_id: string
+    addon?: EventAddon
 }
 
 export type Trek = {

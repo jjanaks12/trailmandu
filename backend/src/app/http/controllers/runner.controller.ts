@@ -96,7 +96,12 @@ export class RunnerController {
                     stage: true,
                     stage_category: true,
                     status: true,
-                    rank: true
+                    rank: true,
+                    addons: {
+                        include: {
+                            addon: true
+                        }
+                    }
                 },
                 orderBy: [{
                     bib: 'asc'
@@ -167,8 +172,17 @@ export class RunnerController {
                 const briefingStatus = briefingInfo ? briefingInfo.status : 'NOT_SENT'
                 const briefingSentAt = briefingInfo ? briefingInfo.date : null
 
+                const hasLunchAddon = (runner as any).addons?.some((a: any) =>
+                    a.addon?.name?.toLowerCase().includes('lunch') ||
+                    a.addon?.name?.toLowerCase().includes('meal') ||
+                    a.addon?.name?.toLowerCase().includes('food') ||
+                    a.addon?.name?.toLowerCase().includes('dal bhat') ||
+                    a.addon?.name?.toLowerCase().includes('khana')
+                )
+
                 return {
                     ...runner,
+                    want_lunch: runner.want_lunch || Boolean(hasLunchAddon),
                     briefing_sent: isBriefed,
                     briefing_sent_at: briefingSentAt,
                     briefing_status: briefingStatus,
@@ -182,6 +196,13 @@ export class RunnerController {
                 result = result.filter(r => r.briefing_sent)
             } else if (briefingFilter === 'false' || briefingFilter === 'not_briefed' || briefingFilter === 'not_sent') {
                 result = result.filter(r => !r.briefing_sent)
+            }
+
+            const lunchFilter = request.query.lunch
+            if (lunchFilter === 'true' || lunchFilter === 'with_lunch' || lunchFilter === 'yes') {
+                result = result.filter(r => r.want_lunch)
+            } else if (lunchFilter === 'false' || lunchFilter === 'without_lunch' || lunchFilter === 'no') {
+                result = result.filter(r => !r.want_lunch)
             }
 
             response.send(result)
@@ -394,6 +415,11 @@ export class RunnerController {
                     payments: {
                         include: {
                             screenshot: true
+                        }
+                    },
+                    addons: {
+                        include: {
+                            addon: true
                         }
                     }
                 }

@@ -17,6 +17,14 @@ const presentRunners = computed(() => props.runners.filter((runner) => runner.ru
 const absentRunners = computed(() => props.runners.filter((runner) => runner.runner_attendances.length == 0).length)
 const briefedRunners = computed(() => props.runners.filter((runner) => runner.briefing_sent || runner.email_sent).length)
 const notBriefedRunners = computed(() => props.runners.filter((runner) => !runner.briefing_sent && !runner.email_sent).length)
+
+const isLunchAddon = (name?: string) => {
+    if (!name) return false
+    const lower = name.toLowerCase()
+    return lower.includes('lunch') || lower.includes('meal') || lower.includes('food') || lower.includes('dal bhat') || lower.includes('khana')
+}
+const lunchRunners = computed(() => props.runners.filter((runner) => runner.want_lunch || runner.addons?.some(a => isLunchAddon(a.addon?.name))).length)
+const noLunchRunners = computed(() => props.runners.length - lunchRunners.value)
 </script>
 
 <template>
@@ -62,6 +70,15 @@ const notBriefedRunners = computed(() => props.runners.filter((runner) => !runne
             <div class="text-amber-600">
                 <strong class="font-normal text-xs uppercase block opacity-35">Not Briefed</strong>
                 <em class="text-5xl not-italic">{{ notBriefedRunners }}</em>
+            </div>
+            <Separator />
+            <div class="text-teal-600">
+                <strong class="font-normal text-xs uppercase block opacity-35">Lunch Required</strong>
+                <em class="text-5xl not-italic">{{ lunchRunners }}</em>
+            </div>
+            <div class="text-gray-500">
+                <strong class="font-normal text-xs uppercase block opacity-35">No Lunch</strong>
+                <em class="text-5xl not-italic">{{ noLunchRunners }}</em>
             </div>
         </div>
     </div>
