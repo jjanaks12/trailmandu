@@ -15,6 +15,8 @@ const maleRunners = computed(() => props.runners.filter((runner) => runner.perso
 const femaleRunners = computed(() => props.runners.filter((runner) => runner.personal.gender.name == 'Female').length)
 const presentRunners = computed(() => props.runners.filter((runner) => runner.runner_attendances.length > 0).length)
 const absentRunners = computed(() => props.runners.filter((runner) => runner.runner_attendances.length == 0).length)
+const briefedRunners = computed(() => props.runners.filter((runner) => runner.briefing_sent || runner.email_sent).length)
+const notBriefedRunners = computed(() => props.runners.filter((runner) => !runner.briefing_sent && !runner.email_sent).length)
 </script>
 
 <template>
@@ -51,6 +53,15 @@ const absentRunners = computed(() => props.runners.filter((runner) => runner.run
             <div class="text-pink-600">
                 <strong class="font-normal text-xs uppercase block opacity-35">Absent</strong>
                 <em class="text-5xl not-italic">{{ absentRunners }}</em>
+            </div>
+            <Separator />
+            <div class="text-emerald-600">
+                <strong class="font-normal text-xs uppercase block opacity-35">Briefed</strong>
+                <em class="text-5xl not-italic">{{ briefedRunners }}</em>
+            </div>
+            <div class="text-amber-600">
+                <strong class="font-normal text-xs uppercase block opacity-35">Not Briefed</strong>
+                <em class="text-5xl not-italic">{{ notBriefedRunners }}</em>
             </div>
         </div>
     </div>

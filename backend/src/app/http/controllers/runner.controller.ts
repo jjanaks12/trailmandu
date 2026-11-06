@@ -112,10 +112,13 @@ export class RunnerController {
             const emailLogs = runnerEmails.length > 0 ? await prisma.emailLog.findMany({
                 where: {
                     recipient: { in: runnerEmails },
-                    status: 'SUCCESS'
+                    status: { in: ['SUCCESS', 'QUEUED'] }
                 },
                 select: {
                     recipient: true,
+                    status: true,
+                    payload: true,
+                    subject: true,
                     created_at: true
                 },
                 orderBy: {
@@ -123,26 +126,62 @@ export class RunnerController {
                 }
             }) : []
 
-            const sentEmailMap = new Map<string, Date>()
+            const runnerBriefingMap = new Map<string, { status: 'SENT' | 'QUEUED', date: Date }>()
+
             for (const log of emailLogs) {
-                if (!sentEmailMap.has(log.recipient)) {
-                    sentEmailMap.set(log.recipient, log.created_at)
+                let p: any = log.payload
+                if (typeof p === 'string') {
+                    try { p = JSON.parse(p) } catch { p = null }
+                }
+
+                const logRunnerId = p?.runner_id || p?.runnerId
+                const logEventId = p?.event_id || p?.eventId
+                const logType = p?.type || p?.category
+                const isBriefing =
+                    logType === 'event_briefing' ||
+                    logType === 'event_mass_email' ||
+                    (typeof logType === 'string' && logType.includes('briefing')) ||
+                    (log.subject && /briefing/i.test(log.subject))
+
+                if (!isBriefing) continue
+
+                for (const runner of runners) {
+                    if (!runner.personal?.email) continue
+                    if (runner.personal.email.toLowerCase() !== log.recipient.toLowerCase()) continue
+
+                    if (logRunnerId && logRunnerId !== runner.id) continue
+                    if (logEventId && request.params.event_id && logEventId !== request.params.event_id) continue
+
+                    if (!runnerBriefingMap.has(runner.id)) {
+                        runnerBriefingMap.set(runner.id, {
+                            status: log.status === 'SUCCESS' ? 'SENT' : 'QUEUED',
+                            date: log.created_at
+                        })
+                    }
                 }
             }
 
             let result = runners.map(runner => {
-                const emailSentAt = runner.personal?.email ? sentEmailMap.get(runner.personal.email) : null
+                const briefingInfo = runnerBriefingMap.get(runner.id)
+                const isBriefed = Boolean(briefingInfo)
+                const briefingStatus = briefingInfo ? briefingInfo.status : 'NOT_SENT'
+                const briefingSentAt = briefingInfo ? briefingInfo.date : null
+
                 return {
                     ...runner,
-                    email_sent: Boolean(emailSentAt),
-                    email_sent_at: emailSentAt
+                    briefing_sent: isBriefed,
+                    briefing_sent_at: briefingSentAt,
+                    briefing_status: briefingStatus,
+                    email_sent: isBriefed,
+                    email_sent_at: briefingSentAt
                 }
             })
 
-            if (request.query.email_sent === 'true') {
-                result = result.filter(r => r.email_sent)
-            } else if (request.query.email_sent === 'false') {
-                result = result.filter(r => !r.email_sent)
+            const briefingFilter = request.query.briefing_sent ?? request.query.email_sent
+            if (briefingFilter === 'true' || briefingFilter === 'briefed' || briefingFilter === 'sent') {
+                result = result.filter(r => r.briefing_sent)
+            } else if (briefingFilter === 'false' || briefingFilter === 'not_briefed' || briefingFilter === 'not_sent') {
+                result = result.filter(r => !r.briefing_sent)
             }
 
             response.send(result)
@@ -781,129 +820,52 @@ export class RunnerController {
             })
 
             let queuedCount = 0;
-            const mapKeys = Object.keys(finalVariableMap || {})
+            const baseUrl = process.env.APP_URL || `${request.protocol}://${request.get('host')}`
 
             for (const runner of runners) {
-                const personal = runner.personal
-                const stageCategory = runner.stage_category
-                const stage = runner.stage || stageCategory?.stage
-                const event = stage?.event || stageCategory?.stage?.event
+                const rendered = RunnerController.buildBriefingEmailForRunner({
+                    runner,
+                    finalSubject,
+                    finalHtmlTemplate,
+                    finalVariableMap,
+                    finalAttachStageGpx,
+                    baseUrl
+                })
 
-                if (!personal?.email) continue;
-
-                const baseUrl = process.env.APP_URL || `${request.protocol}://${request.get('host')}`
-                const gpxFileUrl = stageCategory?.map_file?.file_name
-                    ? `${baseUrl}/resources/gpx/${stageCategory.map_file.file_name}`
-                    : ''
-
-                // Build values map based on what is available
-                const formatTiming = (rawDate: any, fmt?: string, tz?: string) => {
-                    if (!rawDate) return ''
-                    try {
-                        const d = new Date(rawDate)
-                        if (isNaN(d.getTime())) return String(rawDate)
-                        const targetTz = tz && tz !== 'LOCAL' ? tz : 'Asia/Kathmandu'
-                        const localized = new Date(d.toLocaleString('en-US', { timeZone: targetTz }))
-                        return moment(localized).format(fmt || 'MMM DD, YYYY hh:mm A')
-                    } catch {
-                        return moment(rawDate).format(fmt || 'MMM DD, YYYY hh:mm A')
-                    }
-                }
-
-                const eventTimingDate = stageCategory?.start || event?.start
-                const currentStageAddress = stage?.location || stageCategory?.location || ''
-
-                const values: Record<string, string> = {
-                    'First Name': personal.first_name || '',
-                    'Last Name': personal.last_name || '',
-                    'Full Name': [personal.first_name, personal.middle_name, personal.last_name].filter(Boolean).join(' '),
-                    'Email': personal.email,
-                    'BIB Number': runner.bib || '',
-                    'Country': personal.country?.name || '',
-                    'Gender': personal.gender?.name || '',
-                    'Stage Distance': stageCategory?.distance || stageCategory?.name || '',
-                    'Stage Elevation': stageCategory?.elevation || '',
-                    'Elevation': stageCategory?.elevation || '',
-                    'Stage Category Name': stageCategory?.name || '',
-                    'GPX File': gpxFileUrl,
-                    'GPX File URL': gpxFileUrl,
-                    'Event Name': event?.name || '',
-                    'Stage Address': currentStageAddress,
-                    'Current Stage Address': currentStageAddress,
-                    'Event Address': currentStageAddress,
-                    'Event Timing': eventTimingDate ? formatTiming(eventTimingDate) : '',
-                    'Event Thumbnail URL': finalVariableMap?.['Event Thumbnail URL'] || '',
-                    'Stage Image URL': finalVariableMap?.['Stage Image URL'] || ''
-                }
-
-                // Replace placeholders in the HTML
-                let runnerHtml = finalHtmlTemplate
-                for (const placeholder of mapKeys) {
-                    const mappingConfig = finalVariableMap[placeholder]
-                    const mappedField = typeof mappingConfig === 'object' && mappingConfig !== null
-                        ? (mappingConfig.mappedTo || mappingConfig.field)
-                        : mappingConfig
-
-                    let val = values[mappedField] !== undefined ? values[mappedField] : mappedField // fallback to the literal mapping value for images if it was a direct URL
-
-                    if (mappedField === 'Event Timing' && eventTimingDate) {
-                        const fmt = typeof mappingConfig === 'object' && mappingConfig !== null ? mappingConfig.dateFormat : undefined
-                        const tz = typeof mappingConfig === 'object' && mappingConfig !== null ? mappingConfig.timezone : undefined
-                        val = formatTiming(eventTimingDate, fmt, tz)
-                    }
-
-                    // Global replace
-                    const regex = new RegExp(placeholder.replace(/[.*+?^$()|[\]\\]/g, '\\$&'), 'g');
-                    runnerHtml = runnerHtml.replace(regex, val)
-                }
-
-                const attachments: any[] = []
-                if (finalAttachStageGpx && stageCategory?.map_file?.file_name) {
-                    const fileName = stageCategory.map_file.file_name
-                    const possiblePaths = [
-                        path.join(__basedir, 'uploads', 'gpx', fileName),
-                        path.join(__basedir, 'uploads', 'images', fileName),
-                        path.join(__basedir, 'uploads', 'files', fileName)
-                    ]
-
-                    let foundPath = null
-                    for (const p of possiblePaths) {
-                        if (fs.existsSync(p)) {
-                            foundPath = p
-                            break
-                        }
-                    }
-
-                    if (foundPath) {
-                        attachments.push({
-                            filename: fileName,
-                            path: foundPath
-                        })
-                    } else {
-                        console.warn(`Could not find local GPX file for attachment: ${fileName}`)
-                    }
-                }
+                if (!rendered) continue;
 
                 const staggerDelayMs = parseInt(process.env.EMAIL_STAGGER_MS || '3000', 10)
                 const delay = queuedCount * staggerDelayMs
 
                 await emailQueue.add('sendEmail', {
-                    to: personal.email,
-                    subject: finalSubject,
-                    html: runnerHtml,
+                    to: rendered.recipientEmail,
+                    subject: rendered.subject,
+                    html: rendered.html,
                     senderEmail: 'info@trailmandu.com',
-                    category: 'event_mass_email',
-                    attachments
+                    category: 'event_briefing',
+                    type: 'event_briefing',
+                    eventId,
+                    event_id: eventId,
+                    runnerId: runner.id,
+                    runner_id: runner.id,
+                    attachments: rendered.attachments
                 }, {
                     delay
                 })
 
                 await prisma.emailLog.create({
                     data: {
-                        recipient: personal.email,
-                        subject: finalSubject,
+                        recipient: rendered.recipientEmail,
+                        subject: rendered.subject,
                         status: 'QUEUED',
-                        payload: { type: 'event_mass_email', event_id: eventId, runner_id: runner.id }
+                        payload: {
+                            type: 'event_briefing',
+                            category: 'event_briefing',
+                            event_id: eventId,
+                            eventId,
+                            runner_id: runner.id,
+                            runnerId: runner.id
+                        }
                     }
                 }).catch(err => console.error('Failed to log email:', err))
 
@@ -913,6 +875,238 @@ export class RunnerController {
             response.send({ message: `Mass email queued for ${queuedCount} runners` })
         } catch (error) {
             next(error)
+        }
+    }
+
+    public static async sendRunnerBriefing(request: Request, response: Response, next: NextFunction) {
+        try {
+            const eventId = (request.params.event_id || request.body.event_id) as string
+            const runnerId = (request.params.runner_id || request.body.runner_id) as string
+
+            if (!runnerId) {
+                response.status(400).send('Runner ID is required')
+                return
+            }
+
+            const runner = await prisma.eventRunner.findFirst({
+                where: { id: runnerId, deleted_at: null },
+                include: {
+                    personal: {
+                        include: { country: true, gender: true }
+                    },
+                    stage: {
+                        include: { event: true }
+                    },
+                    stage_category: {
+                        include: {
+                            stage: {
+                                include: { event: true }
+                            },
+                            map_file: true
+                        }
+                    }
+                }
+            })
+
+            if (!runner) {
+                response.status(404).send('Runner not found')
+                return
+            }
+
+            if (!runner.personal?.email) {
+                response.status(400).send('Runner does not have an email address configured')
+                return
+            }
+
+            const finalEventId = eventId || runner.event_id || runner.stage?.event_id || runner.stage_category?.stage?.event_id
+            if (!finalEventId) {
+                response.status(400).send('Event ID could not be determined for this runner')
+                return
+            }
+
+            const template = await prisma.eventEmailTemplate.findUnique({
+                where: { event_id: finalEventId }
+            })
+
+            if (!template) {
+                response.status(400).send('No email briefing template found for this event. Please configure the template in the Event Email page first.')
+                return
+            }
+
+            const baseUrl = process.env.APP_URL || `${request.protocol}://${request.get('host')}`
+            const rendered = RunnerController.buildBriefingEmailForRunner({
+                runner,
+                finalSubject: template.subject,
+                finalHtmlTemplate: template.htmlContent,
+                finalVariableMap: (template.variableMap || {}) as Record<string, any>,
+                finalAttachStageGpx: template.attachStageGpx,
+                baseUrl
+            })
+
+            if (!rendered) {
+                response.status(400).send('Failed to generate briefing content for runner')
+                return
+            }
+
+            await emailQueue.add('sendEmail', {
+                to: rendered.recipientEmail,
+                subject: rendered.subject,
+                html: rendered.html,
+                senderEmail: 'info@trailmandu.com',
+                category: 'event_briefing',
+                type: 'event_briefing',
+                eventId: finalEventId,
+                event_id: finalEventId,
+                runnerId: runner.id,
+                runner_id: runner.id,
+                attachments: rendered.attachments,
+                priority: 1
+            }, {
+                priority: 1
+            })
+
+            await prisma.emailLog.create({
+                data: {
+                    recipient: rendered.recipientEmail,
+                    subject: rendered.subject,
+                    status: 'QUEUED',
+                    payload: {
+                        type: 'event_briefing',
+                        category: 'event_briefing',
+                        event_id: finalEventId,
+                        eventId,
+                        runner_id: runner.id,
+                        runnerId: runner.id,
+                        priority: 1
+                    }
+                }
+            }).catch(err => console.error('Failed to log email:', err))
+
+            response.send({
+                message: `Event briefing queued for ${runner.personal.first_name} ${runner.personal.last_name} (${rendered.recipientEmail})`
+            })
+        } catch (error) {
+            next(error)
+        }
+    }
+
+    private static buildBriefingEmailForRunner({
+        runner,
+        finalSubject,
+        finalHtmlTemplate,
+        finalVariableMap,
+        finalAttachStageGpx,
+        baseUrl
+    }: {
+        runner: any
+        finalSubject: string
+        finalHtmlTemplate: string
+        finalVariableMap: Record<string, any>
+        finalAttachStageGpx?: boolean
+        baseUrl: string
+    }) {
+        const personal = runner.personal
+        const stageCategory = runner.stage_category
+        const stage = runner.stage || stageCategory?.stage
+        const event = stage?.event || stageCategory?.stage?.event
+
+        if (!personal?.email) return null
+
+        const gpxFileUrl = stageCategory?.map_file?.file_name
+            ? `${baseUrl}/resources/gpx/${stageCategory.map_file.file_name}`
+            : ''
+
+        const formatTiming = (rawDate: any, fmt?: string, tz?: string) => {
+            if (!rawDate) return ''
+            try {
+                const d = new Date(rawDate)
+                if (isNaN(d.getTime())) return String(rawDate)
+                const targetTz = tz && tz !== 'LOCAL' ? tz : 'Asia/Kathmandu'
+                const localized = new Date(d.toLocaleString('en-US', { timeZone: targetTz }))
+                return moment(localized).format(fmt || 'MMM DD, YYYY hh:mm A')
+            } catch {
+                return moment(rawDate).format(fmt || 'MMM DD, YYYY hh:mm A')
+            }
+        }
+
+        const eventTimingDate = stageCategory?.start || event?.start
+        const currentStageAddress = stage?.location || stageCategory?.location || ''
+
+        const values: Record<string, string> = {
+            'First Name': personal.first_name || '',
+            'Last Name': personal.last_name || '',
+            'Full Name': [personal.first_name, personal.middle_name, personal.last_name].filter(Boolean).join(' '),
+            'Email': personal.email,
+            'BIB Number': runner.bib || '',
+            'Country': personal.country?.name || '',
+            'Gender': personal.gender?.name || '',
+            'Stage Distance': stageCategory?.distance || stageCategory?.name || '',
+            'Stage Elevation': stageCategory?.elevation || '',
+            'Elevation': stageCategory?.elevation || '',
+            'Stage Category Name': stageCategory?.name || '',
+            'GPX File': gpxFileUrl,
+            'GPX File URL': gpxFileUrl,
+            'Event Name': event?.name || '',
+            'Stage Address': currentStageAddress,
+            'Current Stage Address': currentStageAddress,
+            'Event Address': currentStageAddress,
+            'Event Timing': eventTimingDate ? formatTiming(eventTimingDate) : '',
+            'Event Thumbnail URL': finalVariableMap?.['Event Thumbnail URL'] || '',
+            'Stage Image URL': finalVariableMap?.['Stage Image URL'] || ''
+        }
+
+        const mapKeys = Object.keys(finalVariableMap || {})
+        let runnerHtml = finalHtmlTemplate
+        for (const placeholder of mapKeys) {
+            const mappingConfig = finalVariableMap[placeholder]
+            const mappedField = typeof mappingConfig === 'object' && mappingConfig !== null
+                ? (mappingConfig.mappedTo || mappingConfig.field)
+                : mappingConfig
+
+            let val = values[mappedField] !== undefined ? values[mappedField] : mappedField
+
+            if (mappedField === 'Event Timing' && eventTimingDate) {
+                const fmt = typeof mappingConfig === 'object' && mappingConfig !== null ? mappingConfig.dateFormat : undefined
+                const tz = typeof mappingConfig === 'object' && mappingConfig !== null ? mappingConfig.timezone : undefined
+                val = formatTiming(eventTimingDate, fmt, tz)
+            }
+
+            const regex = new RegExp(placeholder.replace(/[.*+?^$()|[\]\\]/g, '\\$&'), 'g')
+            runnerHtml = runnerHtml.replace(regex, val)
+        }
+
+        const attachments: any[] = []
+        if (finalAttachStageGpx && stageCategory?.map_file?.file_name) {
+            const fileName = stageCategory.map_file.file_name
+            const possiblePaths = [
+                path.join(__basedir, 'uploads', 'gpx', fileName),
+                path.join(__basedir, 'uploads', 'images', fileName),
+                path.join(__basedir, 'uploads', 'files', fileName)
+            ]
+
+            let foundPath = null
+            for (const p of possiblePaths) {
+                if (fs.existsSync(p)) {
+                    foundPath = p
+                    break
+                }
+            }
+
+            if (foundPath) {
+                attachments.push({
+                    filename: fileName,
+                    path: foundPath
+                })
+            } else {
+                console.warn(`Could not find local GPX file for attachment: ${fileName}`)
+            }
+        }
+
+        return {
+            recipientEmail: personal.email,
+            subject: finalSubject,
+            html: runnerHtml,
+            attachments
         }
     }
 }

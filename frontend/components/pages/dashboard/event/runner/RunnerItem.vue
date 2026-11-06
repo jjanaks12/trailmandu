@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CheckIcon, ChevronUpIcon, CopyIcon, EllipsisVerticalIcon, MailCheckIcon, MailXIcon } from 'lucide-vue-next'
+import { CheckIcon, ChevronUpIcon, CopyIcon, EllipsisVerticalIcon, MailCheckIcon, MailXIcon, MailIcon, LoaderIcon } from 'lucide-vue-next'
 import moment from 'moment'
 import { humanize } from '~/lib/filters'
 import { getDuration } from '~/lib/filters/runner'
@@ -86,6 +86,25 @@ const sendConfirmationEmail = async () => {
     }
 }
 
+const isSendingBriefing = ref(false)
+const sendBriefingEmail = async () => {
+    try {
+        isSendingBriefing.value = true
+        const eventId = props.runner.event_id || props.runner.stage?.event_id
+        const url = eventId
+            ? `/events/${eventId}/runners/${props.runner.id}/send-briefing`
+            : `/runners/${props.runner.id}/send-briefing`
+
+        const { data } = await axios.post(url)
+        toast.success(data?.message || `Event briefing queued for ${props.runner.personal.first_name}`)
+        emit('fetch')
+    } catch (e: any) {
+        toast.error(e?.response?.data?.message || e?.response?.data || 'Failed to send event briefing')
+    } finally {
+        isSendingBriefing.value = false
+    }
+}
+
 </script>
 
 <template>
@@ -119,13 +138,22 @@ const sendConfirmationEmail = async () => {
                         <span class="font-normal opacity-55">Stage Category:</span>
                         {{ runner.stage_category.name }}
                     </Badge>
-                    <Badge v-if="runner.email_sent" variant="success" class="text-xs">
+                    <Badge v-if="runner.briefing_sent || runner.email_sent" variant="success" class="text-xs"
+                        :title="runner.briefing_sent_at || runner.email_sent_at ? `Briefed: ${moment(runner.briefing_sent_at || runner.email_sent_at).format('MMM DD, YYYY hh:mm A')}` : 'Briefed'">
                         <MailCheckIcon class="size-3 mr-1 inline" />
-                        Email Sent
+                        Briefed
+                        <span v-if="runner.briefing_sent_at || runner.email_sent_at"
+                            class="text-[10px] ml-1 opacity-75 font-normal">
+                            ({{ moment(runner.briefing_sent_at || runner.email_sent_at).format('MMM DD') }})
+                        </span>
+                    </Badge>
+                    <Badge v-else-if="runner.briefing_status === 'QUEUED'" variant="info" class="text-xs">
+                        <LoaderIcon class="size-3 mr-1 inline animate-spin" />
+                        Briefing Queued
                     </Badge>
                     <Badge v-else variant="outline" class="text-xs text-gray-400">
                         <MailXIcon class="size-3 mr-1 inline" />
-                        Email Not Sent
+                        Not Briefed
                     </Badge>
                 </div>
                 <div class="flex gap-2 items-center">
@@ -170,8 +198,15 @@ const sendConfirmationEmail = async () => {
                             <DropdownMenuItem class="text-yellow-500" @click="emit('edit')">
                                 Edit details
                             </DropdownMenuItem>
-                            <DropdownMenuItem class="text-blue-500" @click="sendConfirmationEmail" :disabled="isSendingEmail">
+                            <DropdownMenuItem class="text-blue-500" @click="sendConfirmationEmail"
+                                :disabled="isSendingEmail">
                                 {{ isSendingEmail ? 'Sending...' : 'Resend confirmation email' }}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem class="text-purple-600 dark:text-purple-400" @click="sendBriefingEmail"
+                                :disabled="isSendingBriefing">
+                                <MailIcon class="size-4 mr-2" />
+                                {{ isSendingBriefing ? 'Sending...' : (runner.briefing_sent || runner.email_sent ?
+                                'Resend event briefing' : 'Send event briefing') }}
                             </DropdownMenuItem>
                             <template v-if="runner.payments.length > 0 && runner.payments[0].status != 'COMPLETED'">
                                 <DropdownMenuItem class="text-gray-500" @click="emit('show:payment')" v-if="hasPayment">

@@ -39,7 +39,7 @@ const stageID = useRouteQuery('stage_id', null)
 const paymentStatusOpt = ref<PaymentStatus | null>(null)
 const paymentTypeOpt = ref<PaymentType | null>(null)
 const genderOpt = ref<Gender | null>(null)
-const emailStatusOpt = ref<'sent' | 'not_sent' | null>(null)
+const briefingStatusOpt = ref<'briefed' | 'not_briefed' | null>(null)
 const searchText = shallowRef('')
 const stageCategoryID = ref<string | null>(null)
 
@@ -73,7 +73,8 @@ const fetch = async () => {
                 stage_category: stageCategoryID.value,
                 payment_method: paymentTypeOpt.value,
                 gender: genderOpt.value?.id,
-                email_sent: emailStatusOpt.value === 'sent' ? 'true' : (emailStatusOpt.value === 'not_sent' ? 'false' : undefined),
+                briefing_sent: briefingStatusOpt.value === 'briefed' ? 'true' : (briefingStatusOpt.value === 'not_briefed' ? 'false' : undefined),
+                email_sent: briefingStatusOpt.value === 'briefed' ? 'true' : (briefingStatusOpt.value === 'not_briefed' ? 'false' : undefined),
                 show_all: true
             }
         })
@@ -111,7 +112,7 @@ const reset = () => {
     stageCategoryID.value = null
     paymentTypeOpt.value = null
     genderOpt.value = null
-    emailStatusOpt.value = null
+    briefingStatusOpt.value = null
     runners.value = []
     fetch()
 }
@@ -123,8 +124,9 @@ const sendEventBriefing = async () => {
             runnerIds: runners.value.map(r => r.id),
         }
         const { data } = await axios.post(`/events/${route.params.id}/runners/mass-email`, payload)
-        toast.success(data.message || 'Mass email queued successfully!')
+        toast.success(data.message || 'Mass briefing email queued successfully!')
         massEmailDialog.value = false
+        fetch()
     } catch (e: any) {
         toast.error(e.response?.data?.message || 'Failed to queue emails')
     } finally {
@@ -153,7 +155,7 @@ const downloadCSV = async () => {
     link.click()
 }
 
-watch([paymentStatusOpt, stageID, stageCategoryID, paymentTypeOpt, genderOpt, emailStatusOpt], fetch, { immediate: true })
+watch([paymentStatusOpt, stageID, stageCategoryID, paymentTypeOpt, genderOpt, briefingStatusOpt], fetch, { immediate: true })
 watchDebounced(searchText, fetch, { debounce: 1000 })
 
 onMounted(async () => {
@@ -229,18 +231,18 @@ onUnmounted(() => {
                             </SelectContent>
                         </Select>
                         <Button size="sm" modifier="link" @click="genderOpt = null" v-if="genderOpt">X</Button>
-                        <Select v-model="emailStatusOpt" :disabled="isLoading">
+                        <Select v-model="briefingStatusOpt" :disabled="isLoading">
                             <SelectTrigger class="w-[160px]" size="sm">
-                                Email:
+                                Briefing:
                                 <SelectValue placeholder="All" />
                             </SelectTrigger>
                             <SelectContent>
                                 <SelectItem :value="null">All</SelectItem>
-                                <SelectItem value="sent">Email Sent</SelectItem>
-                                <SelectItem value="not_sent">Not Sent</SelectItem>
+                                <SelectItem value="briefed">Briefed</SelectItem>
+                                <SelectItem value="not_briefed">Not Briefed</SelectItem>
                             </SelectContent>
                         </Select>
-                        <Button size="sm" modifier="link" @click="emailStatusOpt = null" v-if="emailStatusOpt">X</Button>
+                        <Button size="sm" modifier="link" @click="briefingStatusOpt = null" v-if="briefingStatusOpt">X</Button>
                     </div>
                     <InputGroup size="sm">
                         <InputGroupInput class="search-input" v-model="searchText" placeholder="Search by name or bib"
@@ -471,9 +473,10 @@ onUnmounted(() => {
                         <li v-if="paymentStatusOpt">Payment Status: {{ paymentStatusOpt }}</li>
                         <li v-if="paymentTypeOpt">Payment Type: {{ paymentTypeOpt }}</li>
                         <li v-if="genderOpt">Gender: {{ genderOpt.name }}</li>
+                        <li v-if="briefingStatusOpt">Briefing: {{ briefingStatusOpt === 'briefed' ? 'Briefed' : 'Not Briefed' }}</li>
                         <li v-if="searchText">Search: "{{ searchText }}"</li>
                         <li
-                            v-if="!stageID && !stageCategoryID && !paymentStatusOpt && !paymentTypeOpt && !genderOpt && !searchText">
+                            v-if="!stageID && !stageCategoryID && !paymentStatusOpt && !paymentTypeOpt && !genderOpt && !briefingStatusOpt && !searchText">
                             No specific filters applied. Sending to all runners in this view.</li>
                     </ul>
                 </div>

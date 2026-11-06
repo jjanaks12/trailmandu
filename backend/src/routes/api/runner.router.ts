@@ -15,6 +15,7 @@ router.delete('/:runner_id', [verifyAccessToken], RunnerController.delete)
 router.put('/:runner_id/disqualify', [verifyAccessToken], RunnerController.disqualify)
 router.put('/:runner_id/did-not-finish', [verifyAccessToken], RunnerController.didNotFinished)
 router.post('/:runner_id/send-confirmation', [verifyAccessToken], RunnerController.sendConfirmationEmail)
+router.post('/:runner_id/send-briefing', [verifyAccessToken], RunnerController.sendRunnerBriefing)
 
 router.put('/:runner_id/:stage_id/attendance', [verifyAccessToken], RunnerController.attendance)
 router.post('/import', [verifyAccessToken], RunnerController.bulkImport)

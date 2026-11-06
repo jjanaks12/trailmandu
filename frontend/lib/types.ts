@@ -230,6 +230,9 @@ export type EventRunner = {
     season_pass?: SeasonPass
     email_sent?: boolean
     email_sent_at?: string | null
+    briefing_sent?: boolean
+    briefing_sent_at?: string | null
+    briefing_status?: 'SENT' | 'QUEUED' | 'NOT_SENT'
 }
 
 export type RunnerAttendance = {

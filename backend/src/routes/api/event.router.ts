@@ -68,6 +68,8 @@ router.patch('/checkpoints/assign_volunteer/:volunteer_id', [], VolunteerControl
 router.post('/:event_id/runner/register', [], RunnerController.save)
 router.get('/:event_id/:stage_id/runners', [], RunnerController.index)
 router.post('/:event_id/runners/mass-email', [verifyAccessToken], RunnerController.sendMassEmail)
+router.post('/:event_id/runners/:runner_id/send-briefing', [verifyAccessToken], RunnerController.sendRunnerBriefing)
+router.post('/:event_id/runners/:runner_id/briefing', [verifyAccessToken], RunnerController.sendRunnerBriefing)
 
 // STAGE_CATEGORIES
 router.get('/:stage_id/stage_categories', [], StageCategoryController.index)
