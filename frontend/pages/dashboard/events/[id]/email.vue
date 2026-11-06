@@ -2,7 +2,7 @@
 import { ref, watch, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { toast } from 'vue-sonner'
-import { SendIcon, Trash2Icon, UploadCloudIcon, CodeIcon, SparklesIcon, FileCodeIcon, CheckIcon } from 'lucide-vue-next'
+import { SendIcon, Trash2Icon, UploadCloudIcon, CodeIcon, SparklesIcon, FileCodeIcon, CheckIcon, ClockIcon } from 'lucide-vue-next'
 import { useForm, useField } from 'vee-validate'
 import * as yup from 'yup'
 import ClearCacheButton from '@/components/pages/dashboard/event/ClearCacheButton.vue'
@@ -53,12 +53,29 @@ const {
     localImages,
     variables,
     availableMappings,
+    availableDateTimeFormats,
+    availableTimezones,
+    formatEventTiming,
     parseTemplate,
     deleteVariable,
     handleTemplateUpload: onUploadTemplate,
     buildVariableMap,
     replaceLocalImages
 } = useEmailTemplateParser()
+
+const sampleEventDate = computed(() => {
+    return trailRace.value?.stages?.[0]?.stage_categories?.[0]?.start ||
+           trailRace.value?.stages?.[0]?.start ||
+           trailRace.value?.start ||
+           '2026-11-07T00:15:00.000Z'
+})
+
+const handleMappingChange = (v: any) => {
+    if (v.mappedTo === 'Event Timing') {
+        if (!v.dateFormat) v.dateFormat = 'MMM DD, YYYY hh:mm A'
+        if (!v.timezone) v.timezone = 'Asia/Kathmandu'
+    }
+}
 
 const handleTemplateUpload = (e: Event) => {
     onUploadTemplate(e, (text) => {
@@ -189,16 +206,42 @@ onMounted(async () => {
 
             // Restore variable mappings
             if (data.variableMap) {
-                Object.entries(data.variableMap).forEach(([key, mappedField]) => {
+                Object.entries(data.variableMap).forEach(([key, mappedData]) => {
                     const cleanName = key.replace(/^\{\{|\}\}$/g, '').trim()
                     const existing = variables.value.find(v => v.name === cleanName)
+
+                    let mappedField = ''
+                    let dateFormat = 'MMM DD, YYYY hh:mm A'
+                    let timezone = 'Asia/Kathmandu'
+                    let customFormat = ''
+
+                    if (typeof mappedData === 'object' && mappedData !== null) {
+                        mappedField = (mappedData as any).mappedTo || (mappedData as any).field || ''
+                        dateFormat = (mappedData as any).dateFormat || (mappedData as any).format || 'MMM DD, YYYY hh:mm A'
+                        timezone = (mappedData as any).timezone || 'Asia/Kathmandu'
+                        if (!availableDateTimeFormats.some(f => f.value === dateFormat)) {
+                            customFormat = dateFormat
+                            dateFormat = 'custom'
+                        }
+                    } else {
+                        mappedField = mappedData as string
+                    }
+
                     if (existing) {
-                        existing.mappedTo = mappedField as string
+                        existing.mappedTo = mappedField
+                        if (mappedField === 'Event Timing') {
+                            existing.dateFormat = dateFormat
+                            existing.timezone = timezone
+                            existing.customFormat = customFormat
+                        }
                     } else {
                         // Previously saved variable not found in current template HTML
                         variables.value.push({
                             name: cleanName,
-                            mappedTo: mappedField as string,
+                            mappedTo: mappedField,
+                            dateFormat: mappedField === 'Event Timing' ? dateFormat : undefined,
+                            timezone: mappedField === 'Event Timing' ? timezone : undefined,
+                            customFormat: customFormat || undefined,
                             isUsed: false,
                             usesCount: 0
                         })
@@ -470,48 +513,92 @@ const saveTemplate = handleSubmit(async (values) => {
 
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div v-for="v in variables" :key="v.name"
-                                    class="flex items-center gap-2.5 p-3 rounded border transition-colors"
+                                    class="flex flex-col gap-2 p-3 rounded border transition-colors"
                                     :class="v.isUsed !== false ? 'bg-white border-amber-100 hover:border-amber-300' : 'bg-gray-50 border-gray-200'">
                                     
-                                    <!-- Variable name (interactive if used) -->
-                                    <button
-                                        type="button"
-                                        @click="v.isUsed !== false ? locateVariable(v.name) : null"
-                                        :class="v.isUsed !== false ? 'cursor-pointer hover:text-amber-800 hover:bg-amber-100/60' : 'cursor-default text-gray-500'"
-                                        class="text-sm font-mono flex-1 min-w-0 truncate text-left px-2 py-1 rounded transition-all flex items-center justify-between group"
-                                        :title="v.isUsed !== false ? 'Click to locate first occurrence in editor or preview' : 'Variable is not used in the template'"
-                                    >
-                                        <span class="truncate">\{{ v.name }}</span>
-                                        <svg v-if="v.isUsed !== false" class="w-3.5 h-3.5 opacity-0 group-hover:opacity-75 text-amber-700 shrink-0 ml-1 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-                                        </svg>
-                                    </button>
+                                    <div class="flex items-center gap-2.5">
+                                        <!-- Variable name (interactive if used) -->
+                                        <button
+                                            type="button"
+                                            @click="v.isUsed !== false ? locateVariable(v.name) : null"
+                                            :class="v.isUsed !== false ? 'cursor-pointer hover:text-amber-800 hover:bg-amber-100/60' : 'cursor-default text-gray-500'"
+                                            class="text-sm font-mono flex-1 min-w-0 truncate text-left px-2 py-1 rounded transition-all flex items-center justify-between group"
+                                            :title="v.isUsed !== false ? 'Click to locate first occurrence in editor or preview' : 'Variable is not used in the template'"
+                                        >
+                                            <span class="truncate">\{{ v.name }}</span>
+                                            <svg v-if="v.isUsed !== false" class="w-3.5 h-3.5 opacity-0 group-hover:opacity-75 text-amber-700 shrink-0 ml-1 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                                            </svg>
+                                        </button>
 
-                                    <!-- Status / Usage badges -->
-                                    <span v-if="v.isUsed === false" class="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-gray-200 text-gray-600 border border-gray-300 shrink-0">
-                                        Unused
-                                    </span>
-                                    <span v-else-if="v.usesCount && v.usesCount > 1" class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 shrink-0" :title="`${v.usesCount} occurrences in template`">
-                                        {{ v.usesCount }}x
-                                    </span>
+                                        <!-- Status / Usage badges -->
+                                        <span v-if="v.isUsed === false" class="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-gray-200 text-gray-600 border border-gray-300 shrink-0">
+                                            Unused
+                                        </span>
+                                        <span v-else-if="v.usesCount && v.usesCount > 1" class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 shrink-0" :title="`${v.usesCount} occurrences in template`">
+                                            {{ v.usesCount }}x
+                                        </span>
 
-                                    <!-- Field mapping dropdown -->
-                                    <select v-model="v.mappedTo" class="w-40 sm:w-44 shrink-0 px-2 py-1 text-sm border rounded bg-white">
-                                        <option value="">Select Field...</option>
-                                        <option v-for="opt in availableMappings" :key="opt" :value="opt">{{ opt }}
-                                        </option>
-                                    </select>
+                                        <!-- Field mapping dropdown -->
+                                        <select v-model="v.mappedTo" @change="handleMappingChange(v)" class="w-40 sm:w-44 shrink-0 px-2 py-1 text-sm border rounded bg-white">
+                                            <option value="">Select Field...</option>
+                                            <option v-for="opt in availableMappings" :key="opt" :value="opt">{{ opt }}</option>
+                                        </select>
 
-                                    <!-- Delete button (only when unused) -->
-                                    <button
-                                        v-if="v.isUsed === false"
-                                        type="button"
-                                        @click="deleteVariable(v.name)"
-                                        class="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors shrink-0 cursor-pointer"
-                                        title="Delete unused variable"
-                                    >
-                                        <Trash2Icon class="w-4 h-4" />
-                                    </button>
+                                        <!-- Delete button (only when unused) -->
+                                        <button
+                                            v-if="v.isUsed === false"
+                                            type="button"
+                                            @click="deleteVariable(v.name)"
+                                            class="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors shrink-0 cursor-pointer"
+                                            title="Delete unused variable"
+                                        >
+                                            <Trash2Icon class="w-4 h-4" />
+                                        </button>
+                                    </div>
+
+                                    <!-- Event Timing Date-Time & Localize Controls -->
+                                    <div v-if="v.mappedTo === 'Event Timing'" class="pt-2 border-t border-slate-100 mt-1 bg-amber-50/60 p-2.5 rounded-md space-y-2 text-xs">
+                                        <div class="flex items-center justify-between text-[11px] font-medium text-amber-900">
+                                            <span class="flex items-center gap-1">
+                                                <ClockIcon class="w-3.5 h-3.5 text-amber-600" />
+                                                <span>Event Timing Format (Localized)</span>
+                                            </span>
+                                            <span class="font-mono text-[10px] text-amber-800 bg-amber-100/80 px-1.5 py-0.5 rounded" title="Sample date formatted with your settings">
+                                                Preview: {{ formatEventTiming(sampleEventDate, v.dateFormat === 'custom' ? v.customFormat : v.dateFormat, v.timezone) }}
+                                            </span>
+                                        </div>
+
+                                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                            <div class="space-y-1">
+                                                <label class="text-[10px] text-muted-foreground font-medium">Format:</label>
+                                                <select v-model="v.dateFormat" class="w-full h-8 text-xs border rounded bg-white px-2">
+                                                    <option v-for="fmt in availableDateTimeFormats" :key="fmt.value" :value="fmt.value">
+                                                        {{ fmt.label }}
+                                                    </option>
+                                                </select>
+                                            </div>
+                                            <div class="space-y-1">
+                                                <label class="text-[10px] text-muted-foreground font-medium">Timezone / Location:</label>
+                                                <select v-model="v.timezone" class="w-full h-8 text-xs border rounded bg-white px-2">
+                                                    <option v-for="tz in availableTimezones" :key="tz.value" :value="tz.value">
+                                                        {{ tz.label }}
+                                                    </option>
+                                                </select>
+                                            </div>
+                                        </div>
+
+                                        <!-- Custom Format Pattern Input -->
+                                        <div v-if="v.dateFormat === 'custom'" class="pt-1 flex items-center gap-2">
+                                            <label class="text-[10px] text-muted-foreground whitespace-nowrap">Pattern:</label>
+                                            <input
+                                                type="text"
+                                                v-model="v.customFormat"
+                                                placeholder="e.g. dddd, MMMM DD, YYYY [at] hh:mm A"
+                                                class="h-7 text-xs border rounded px-2 flex-1 font-mono bg-white"
+                                            />
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>

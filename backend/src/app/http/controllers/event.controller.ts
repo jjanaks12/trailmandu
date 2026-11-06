@@ -603,6 +603,21 @@ export class EventController {
                 ? `${baseUrl}/resources/gpx/${runnerStageCat.map_file.file_name}`
                 : `${baseUrl}/resources/gpx/sample.gpx`
 
+            const formatTiming = (rawDate: any, fmt?: string, tz?: string) => {
+                if (!rawDate) return ''
+                try {
+                    const d = new Date(rawDate)
+                    if (isNaN(d.getTime())) return String(rawDate)
+                    const targetTz = tz && tz !== 'LOCAL' ? tz : 'Asia/Kathmandu'
+                    const localized = new Date(d.toLocaleString('en-US', { timeZone: targetTz }))
+                    return moment(localized).format(fmt || 'MMM DD, YYYY hh:mm A')
+                } catch {
+                    return moment(rawDate).format(fmt || 'MMM DD, YYYY hh:mm A')
+                }
+            }
+
+            const eventTimingDate = runnerStageCat?.start || event?.start
+
             const values: Record<string, string> = {
                 'First Name': sampleRunner?.personal?.first_name || 'John',
                 'Last Name': sampleRunner?.personal?.last_name || 'Doe',
@@ -619,7 +634,7 @@ export class EventController {
                 'GPX File URL': gpxFileUrl,
                 'Event Name': event.name || 'Trailmandu Event',
                 'Event Address': runnerStageCat?.location || runnerStageCat?.stage?.location || 'Kathmandu, Nepal',
-                'Event Timing': runnerStageCat?.start ? moment.utc(runnerStageCat.start).local().format('DD-MM-YYYY hh:mm a') : '25-12-2026 06:00 am',
+                'Event Timing': eventTimingDate ? formatTiming(eventTimingDate) : '25-12-2026 06:00 am',
                 'Event Thumbnail URL': finalVariableMap?.['Event Thumbnail URL'] || '',
                 'Stage Image URL': finalVariableMap?.['Stage Image URL'] || ''
             }
@@ -627,8 +642,19 @@ export class EventController {
             let renderedHtml = finalHtmlTemplate
             const mapKeys = Object.keys(finalVariableMap || {})
             for (const placeholder of mapKeys) {
-                const mappedField = finalVariableMap[placeholder]
-                const val = values[mappedField] !== undefined ? values[mappedField] : mappedField
+                const mappingConfig = finalVariableMap[placeholder]
+                const mappedField = typeof mappingConfig === 'object' && mappingConfig !== null
+                    ? (mappingConfig.mappedTo || mappingConfig.field)
+                    : mappingConfig
+
+                let val = values[mappedField] !== undefined ? values[mappedField] : mappedField
+
+                if (mappedField === 'Event Timing' && eventTimingDate) {
+                    const fmt = typeof mappingConfig === 'object' && mappingConfig !== null ? mappingConfig.dateFormat : undefined
+                    const tz = typeof mappingConfig === 'object' && mappingConfig !== null ? mappingConfig.timezone : undefined
+                    val = formatTiming(eventTimingDate, fmt, tz)
+                }
+
                 const regex = new RegExp(placeholder.replace(/[.*+?^$()|[\]\\]/g, '\\$&'), 'g')
                 renderedHtml = renderedHtml.replace(regex, val)
             }

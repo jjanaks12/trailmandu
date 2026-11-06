@@ -792,6 +792,21 @@ export class RunnerController {
                     : ''
 
                 // Build values map based on what is available
+                const formatTiming = (rawDate: any, fmt?: string, tz?: string) => {
+                    if (!rawDate) return ''
+                    try {
+                        const d = new Date(rawDate)
+                        if (isNaN(d.getTime())) return String(rawDate)
+                        const targetTz = tz && tz !== 'LOCAL' ? tz : 'Asia/Kathmandu'
+                        const localized = new Date(d.toLocaleString('en-US', { timeZone: targetTz }))
+                        return moment(localized).format(fmt || 'MMM DD, YYYY hh:mm A')
+                    } catch {
+                        return moment(rawDate).format(fmt || 'MMM DD, YYYY hh:mm A')
+                    }
+                }
+
+                const eventTimingDate = stageCategory?.start || event?.start
+
                 const values: Record<string, string> = {
                     'First Name': personal.first_name || '',
                     'Last Name': personal.last_name || '',
@@ -808,7 +823,7 @@ export class RunnerController {
                     'GPX File URL': gpxFileUrl,
                     'Event Name': event?.name || '',
                     'Event Address': stageCategory?.location || stageCategory?.stage?.location || '',
-                    'Event Timing': stageCategory?.start ? moment.utc(stageCategory.start).local().format('DD-MM-YYYY hh:mm a') : '',
+                    'Event Timing': eventTimingDate ? formatTiming(eventTimingDate) : '',
                     'Event Thumbnail URL': finalVariableMap?.['Event Thumbnail URL'] || '',
                     'Stage Image URL': finalVariableMap?.['Stage Image URL'] || ''
                 }
@@ -816,8 +831,18 @@ export class RunnerController {
                 // Replace placeholders in the HTML
                 let runnerHtml = finalHtmlTemplate
                 for (const placeholder of mapKeys) {
-                    const mappedField = finalVariableMap[placeholder]
-                    const val = values[mappedField] !== undefined ? values[mappedField] : mappedField // fallback to the literal mapping value for images if it was a direct URL
+                    const mappingConfig = finalVariableMap[placeholder]
+                    const mappedField = typeof mappingConfig === 'object' && mappingConfig !== null
+                        ? (mappingConfig.mappedTo || mappingConfig.field)
+                        : mappingConfig
+
+                    let val = values[mappedField] !== undefined ? values[mappedField] : mappedField // fallback to the literal mapping value for images if it was a direct URL
+
+                    if (mappedField === 'Event Timing' && eventTimingDate) {
+                        const fmt = typeof mappingConfig === 'object' && mappingConfig !== null ? mappingConfig.dateFormat : undefined
+                        const tz = typeof mappingConfig === 'object' && mappingConfig !== null ? mappingConfig.timezone : undefined
+                        val = formatTiming(eventTimingDate, fmt, tz)
+                    }
 
                     // Global replace
                     const regex = new RegExp(placeholder.replace(/[.*+?^$()|[\]\\]/g, '\\$&'), 'g');

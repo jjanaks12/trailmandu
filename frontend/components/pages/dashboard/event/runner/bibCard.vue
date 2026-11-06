@@ -44,13 +44,23 @@ const loadEventSettings = async () => {
 }
 
 const formatBibDistance = (runner: EventRunner) => {
-    const raw = runner.stage_category?.distance || runner.stage?.distance || ''
-    if (!raw) return ''
-    const num = parseFloat(String(raw).replace(/[^0-9.]/g, ''))
-    if (!isNaN(num) && !String(raw).toLowerCase().includes('km')) {
-        return `${num} KM`
+    let raw = runner.stage_category?.distance || runner.stage?.distance || ''
+    if (!raw && runner.stage_category?.name) {
+        const match = runner.stage_category.name.match(/\d+(\.\d+)?/)
+        if (match) raw = match[0]
     }
-    return String(raw).toUpperCase()
+    if (!raw) return ''
+
+    const str = String(raw).trim()
+    const num = parseFloat(str.replace(/[^0-9.]/g, ''))
+    if (isNaN(num)) return str.toUpperCase()
+
+    // If number >= 500 (e.g. 10000, 25000, 50000) or ends with 'm' (not 'km'), it's given in meters
+    const isMeters = num >= 500 || /^\d+(\.\d+)?\s*m$/i.test(str)
+    const kmValue = isMeters ? num / 1000 : num
+    const roundedKm = Math.round(kmValue)
+
+    return `${roundedKm} KM`
 }
 
 const formatBibLocation = (runner: EventRunner) => {
@@ -71,48 +81,153 @@ const showDialiog = defineModel('show', {
     default: false
 })
 
-const extraBibsCount = ref(0)
-const extraBibsStart = ref(1000)
+interface CategoryGroup {
+    id: string
+    name: string
+    runners: EventRunner[]
+    sampleRunner: EventRunner
+    maxBib: number
+    padLength: number
+    prefix: string
+    suffix: string
+    autoStart: number
+}
 
-watch(() => props.runners, (runners) => {
-    loadEventSettings()
-    if (runners && runners.length > 0) {
-        const maxBib = Math.max(...runners.map(r => parseInt(r.bib) || 0))
-        extraBibsStart.value = maxBib > 0 ? maxBib + 1 : 1000
+const categories = computed<CategoryGroup[]>(() => {
+    const map = new Map<string, CategoryGroup>()
+
+    for (const runner of (props.runners || [])) {
+        const catId = runner.stage_category_id || runner.stage_category?.id || 'default'
+        const catName = runner.stage_category?.name || runner.stage?.name || 'Default'
+        
+        if (!map.has(catId)) {
+            map.set(catId, {
+                id: catId,
+                name: catName,
+                runners: [],
+                sampleRunner: runner,
+                maxBib: 0,
+                padLength: 1,
+                prefix: '',
+                suffix: '',
+                autoStart: 1
+            })
+        }
+        map.get(catId)!.runners.push(runner)
     }
+
+    for (const cat of map.values()) {
+        const bibStrings = cat.runners.map(r => String(r.bib || '').trim()).filter(Boolean)
+        let maxNum = 0
+        let maxPad = 1
+        let detectedPrefix = ''
+        let detectedSuffix = ''
+
+        for (const b of bibStrings) {
+            const m = b.match(/^([^\d]*)(\d+)([^\d]*)$/)
+            if (m) {
+                const num = parseInt(m[2], 10)
+                if (!isNaN(num) && num > maxNum) {
+                    maxNum = num
+                }
+                if (m[2].length > maxPad) {
+                    maxPad = m[2].length
+                }
+                if (!detectedPrefix && m[1]) detectedPrefix = m[1]
+                if (!detectedSuffix && m[3]) detectedSuffix = m[3]
+            }
+        }
+
+        cat.maxBib = maxNum
+        const numLength = maxNum > 0 ? String(maxNum).length : 1
+        cat.padLength = Math.max(maxPad, numLength)
+        cat.prefix = detectedPrefix
+        cat.suffix = detectedSuffix
+        cat.autoStart = maxNum > 0 ? maxNum + 1 : 1
+    }
+
+    return Array.from(map.values())
+})
+
+const extraBibsCount = ref(0)
+const categoryStartBibs = ref<Record<string, number>>({})
+
+const getStartForCat = (cat: CategoryGroup) => {
+    const custom = categoryStartBibs.value[cat.id]
+    if (custom != null && !isNaN(custom) && custom > 0) {
+        return custom
+    }
+    return cat.autoStart
+}
+
+const formatBibForCat = (cat: CategoryGroup, num: number) => {
+    const formattedNum = num.toString().padStart(cat.padLength, '0')
+    return `${cat.prefix}${formattedNum}${cat.suffix}`
+}
+
+watch(() => props.runners, () => {
+    loadEventSettings()
+    const starts: Record<string, number> = {}
+    for (const cat of categories.value) {
+        starts[cat.id] = cat.autoStart
+    }
+    categoryStartBibs.value = starts
 }, { immediate: true })
 
 const jumpBibNumber = ref('')
 const scrollToBib = () => {
     if (!jumpBibNumber.value) return
-    const el = document.getElementById(`bib-card-${jumpBibNumber.value}`)
+    const target = jumpBibNumber.value.trim()
+    let el = document.getElementById(`bib-card-${target}`)
+    if (!el) {
+        const num = parseInt(target, 10)
+        if (!isNaN(num)) {
+            for (let pad = 1; pad <= 6; pad++) {
+                const candidate = num.toString().padStart(pad, '0')
+                el = document.getElementById(`bib-card-${candidate}`)
+                if (el) break
+            }
+        }
+    }
     if (el) {
         el.scrollIntoView({ behavior: 'smooth', block: 'center' })
     } else {
-        alert('BIB not found in the current list')
+        alert(`BIB "${target}" not found in current list`)
     }
 }
 
 const displayRunners = computed(() => {
-    const list = [...(props.runners || [])]
-    
-    if (extraBibsCount.value > 0) {
-        const targetLength = props.runners && props.runners.length > 0 
-            ? Math.max(...props.runners.map(r => String(r.bib || '').length))
-            : 1;
-        const refRunner = props.runners?.[0]
+    if (!extraBibsCount.value || extraBibsCount.value <= 0) {
+        return props.runners || []
+    }
+
+    const result: EventRunner[] = []
+
+    for (const cat of categories.value) {
+        // Add existing registered runners for this category
+        result.push(...cat.runners)
+
+        // Generate extra blank bibs for this category starting from (maxBib + 1)
+        const start = getStartForCat(cat)
         for (let i = 0; i < extraBibsCount.value; i++) {
-            list.push({
-                id: `extra-${i}`,
-                bib: (extraBibsStart.value + i).toString().padStart(targetLength, '0'),
-                stage_category_id: refRunner?.stage_category_id || '',
-                stage_category: refRunner?.stage_category || null,
-                personal: {}, // Empty so no name/flag shows
+            const num = start + i
+            const bibString = formatBibForCat(cat, num)
+
+            result.push({
+                id: `extra-${cat.id}-${num}`,
+                bib: bibString,
+                stage_category_id: cat.sampleRunner.stage_category_id || cat.id,
+                stage_category: cat.sampleRunner.stage_category || null,
+                stage_id: cat.sampleRunner.stage_id || '',
+                stage: cat.sampleRunner.stage || null,
+                event_id: cat.sampleRunner.event_id || '',
+                event: cat.sampleRunner.event || null,
+                personal: {}, // Blank name & flag for extra bibs
             } as any)
         }
     }
-    
-    return list
+
+    return result
 })
 
 const downloadPDF = () => {
@@ -154,20 +269,61 @@ const getBibImage = (runner: EventRunner) => {
             <div class="flex-1 min-h-0 overflow-y-auto bg-gray-100 p-4 rounded-md">
                 
                 <div class="flex flex-wrap items-end gap-4 mb-4 bg-white/95 backdrop-blur-sm p-4 rounded-lg shadow-sm sticky top-0 z-10 border border-slate-200">
-                    <div class="space-y-2">
-                        <Label>Extra Blank BIBs</Label>
-                        <Input type="number" v-model.number="extraBibsCount" min="0" class="w-32" />
+                    <div class="space-y-1.5">
+                        <Label class="text-xs font-semibold">Extra Blank BIBs (per category)</Label>
+                        <div class="flex items-center gap-2">
+                            <Input type="number" v-model.number="extraBibsCount" min="0" class="w-28 font-mono" placeholder="0" />
+                            <span class="text-xs text-muted-foreground whitespace-nowrap" v-if="extraBibsCount > 0 && categories.length > 0">
+                                Total: <strong class="text-foreground">{{ extraBibsCount * categories.length }}</strong> extra ({{ extraBibsCount }} &times; {{ categories.length }} {{ categories.length === 1 ? 'category' : 'categories' }})
+                            </span>
+                        </div>
                     </div>
-                    <div class="space-y-2" v-if="extraBibsCount > 0">
-                        <Label>Starting BIB Number</Label>
-                        <Input type="number" v-model.number="extraBibsStart" min="1" class="w-40" />
+
+                    <!-- Single Category Start Input -->
+                    <div class="space-y-1.5" v-if="extraBibsCount > 0 && categories.length === 1">
+                        <Label class="text-xs font-semibold">Starting BIB Number</Label>
+                        <div class="flex items-center gap-2">
+                            <Input
+                                type="number"
+                                v-model.number="categoryStartBibs[categories[0].id]"
+                                min="1"
+                                class="w-32 font-mono"
+                            />
+                            <span class="text-xs text-muted-foreground font-mono">
+                                ({{ formatBibForCat(categories[0], getStartForCat(categories[0])) }} &ndash; {{ formatBibForCat(categories[0], getStartForCat(categories[0]) + extraBibsCount - 1) }})
+                            </span>
+                        </div>
                     </div>
-                    
-                    <div class="space-y-2 ml-auto border-l pl-4 border-slate-200">
-                        <Label>Find BIB</Label>
+
+                    <!-- Multiple Categories Start Inputs -->
+                    <div v-if="extraBibsCount > 0 && categories.length > 1" class="space-y-1.5">
+                        <Label class="text-xs font-semibold">Starting Numbers Per Category</Label>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <div
+                                v-for="cat in categories"
+                                :key="cat.id"
+                                class="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-md"
+                            >
+                                <span class="text-xs font-semibold text-slate-700 whitespace-nowrap">{{ cat.name }}:</span>
+                                <Input
+                                    type="number"
+                                    v-model.number="categoryStartBibs[cat.id]"
+                                    min="1"
+                                    class="w-20 h-7 text-xs font-mono px-1.5"
+                                    :placeholder="String(cat.autoStart)"
+                                />
+                                <span class="text-[11px] text-muted-foreground font-mono whitespace-nowrap">
+                                    ({{ formatBibForCat(cat, getStartForCat(cat)) }}&ndash;{{ formatBibForCat(cat, getStartForCat(cat) + extraBibsCount - 1) }})
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="space-y-1.5 ml-auto border-l pl-4 border-slate-200">
+                        <Label class="text-xs font-semibold">Find BIB</Label>
                         <div class="flex items-center gap-2">
                             <Input type="text" v-model="jumpBibNumber" @keyup.enter="scrollToBib" placeholder="Number..." class="w-24" />
-                            <Button variant="secondary" @click="scrollToBib">Go</Button>
+                            <Button variant="secondary" size="sm" @click="scrollToBib">Go</Button>
                         </div>
                     </div>
                 </div>

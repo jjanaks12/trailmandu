@@ -62,9 +62,17 @@ export function useEmailTemplateTest(options: EmailTemplateTestOptions) {
         try {
             isSendingTestEmail.value = true
 
-            const variableMap: Record<string, string> = {}
+            const variableMap: Record<string, any> = {}
             variables.value.forEach(v => {
-                variableMap[`{{${v.name}}}`] = v.mappedTo
+                if (v.mappedTo === 'Event Timing') {
+                    variableMap[`{{${v.name}}}`] = {
+                        mappedTo: 'Event Timing',
+                        dateFormat: (v.dateFormat === 'custom' ? v.customFormat : v.dateFormat) || 'MMM DD, YYYY hh:mm A',
+                        timezone: v.timezone || 'Asia/Kathmandu'
+                    }
+                } else {
+                    variableMap[`{{${v.name}}}`] = v.mappedTo
+                }
             })
 
             let processedHtml = htmlContent.value

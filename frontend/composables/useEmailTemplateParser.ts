@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import { toast } from 'vue-sonner'
+import moment from 'moment'
 
 export interface LocalImageItem {
     src: string
@@ -12,6 +13,9 @@ export interface VariableItem {
     mappedTo: string
     isUsed?: boolean
     usesCount?: number
+    dateFormat?: string
+    timezone?: string
+    customFormat?: string
 }
 
 export const availableMappings = [
@@ -20,6 +24,51 @@ export const availableMappings = [
     'GPX File', 'GPX File URL', 'Event Name', 'Event Address', 'Event Timing',
     'Event Thumbnail URL', 'Stage Image URL'
 ]
+
+export const availableDateTimeFormats = [
+    { label: 'Nov 07, 2026 06:00 AM', value: 'MMM DD, YYYY hh:mm A' },
+    { label: 'November 07, 2026 at 06:00 AM', value: 'MMMM DD, YYYY [at] hh:mm A' },
+    { label: 'Saturday, Nov 07, 2026 06:00 AM', value: 'ddd, MMM DD, YYYY hh:mm A' },
+    { label: 'Saturday, November 07, 2026', value: 'dddd, MMMM DD, YYYY' },
+    { label: '07 Nov 2026, 06:00', value: 'DD MMM YYYY, HH:mm' },
+    { label: '07-11-2026 06:00 AM', value: 'DD-MM-YYYY hh:mm A' },
+    { label: '2026-11-07 06:00', value: 'YYYY-MM-DD HH:mm' },
+    { label: 'Nov 07, 2026 (Date only)', value: 'MMM DD, YYYY' },
+    { label: '06:00 AM (Time only)', value: 'hh:mm A' },
+    { label: 'Custom Format...', value: 'custom' }
+]
+
+export const availableTimezones = [
+    { label: 'Nepal Time (NPT, UTC+5:45)', value: 'Asia/Kathmandu' },
+    { label: 'India Time (IST, UTC+5:30)', value: 'Asia/Kolkata' },
+    { label: 'Coordinated Universal Time (UTC)', value: 'UTC' },
+    { label: 'Gulf Standard Time (GST, UTC+4)', value: 'Asia/Dubai' },
+    { label: 'London Time (GMT/BST)', value: 'Europe/London' },
+    { label: 'US Eastern Time (EST/EDT)', value: 'America/New_York' },
+    { label: 'Browser Local Time', value: 'LOCAL' }
+]
+
+export function formatEventTiming(
+    rawDate: string | Date | null | undefined,
+    formatStr = 'MMM DD, YYYY hh:mm A',
+    timezone = 'Asia/Kathmandu'
+): string {
+    if (!rawDate) return ''
+    try {
+        const d = new Date(rawDate)
+        if (isNaN(d.getTime())) return String(rawDate)
+
+        const tz = timezone === 'LOCAL' || !timezone
+            ? (typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : 'Asia/Kathmandu')
+            : timezone
+
+        const localized = new Date(d.toLocaleString('en-US', { timeZone: tz }))
+        const fmt = formatStr === 'custom' ? 'MMM DD, YYYY hh:mm A' : (formatStr || 'MMM DD, YYYY hh:mm A')
+        return moment(localized).format(fmt)
+    } catch {
+        return moment(rawDate).format(formatStr || 'MMM DD, YYYY hh:mm A')
+    }
+}
 
 export function useEmailTemplateParser() {
     const localImages = ref<LocalImageItem[]>([])
@@ -84,6 +133,8 @@ export function useEmailTemplateParser() {
                 updatedVars.push({
                     name: varName,
                     mappedTo: guessed,
+                    dateFormat: guessed === 'Event Timing' ? 'MMM DD, YYYY hh:mm A' : undefined,
+                    timezone: guessed === 'Event Timing' ? 'Asia/Kathmandu' : undefined,
                     isUsed: true,
                     usesCount: count
                 })
@@ -119,10 +170,18 @@ export function useEmailTemplateParser() {
         reader.readAsText(file)
     }
 
-    const buildVariableMap = (): Record<string, string> => {
-        const variableMap: Record<string, string> = {}
+    const buildVariableMap = (): Record<string, any> => {
+        const variableMap: Record<string, any> = {}
         variables.value.forEach(v => {
-            variableMap[`{{${v.name}}}`] = v.mappedTo
+            if (v.mappedTo === 'Event Timing') {
+                variableMap[`{{${v.name}}}`] = {
+                    mappedTo: 'Event Timing',
+                    dateFormat: (v.dateFormat === 'custom' ? v.customFormat : v.dateFormat) || 'MMM DD, YYYY hh:mm A',
+                    timezone: v.timezone || 'Asia/Kathmandu'
+                }
+            } else {
+                variableMap[`{{${v.name}}}`] = v.mappedTo
+            }
         })
         return variableMap
     }
@@ -141,6 +200,9 @@ export function useEmailTemplateParser() {
         localImages,
         variables,
         availableMappings,
+        availableDateTimeFormats,
+        availableTimezones,
+        formatEventTiming,
         parseTemplate,
         deleteVariable,
         handleTemplateUpload,
