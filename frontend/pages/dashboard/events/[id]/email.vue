@@ -98,8 +98,18 @@ const currentStage = computed<Stage | undefined>(() => {
     return futureOrActive || validStages[validStages.length - 1] || validStages[0]
 })
 
+const selectedPreviewCategoryId = ref('')
+
 const currentStageCategory = computed(() => {
+    if (selectedPreviewCategoryId.value && currentStage.value?.stage_categories) {
+        const found = currentStage.value.stage_categories.find(c => c.id === selectedPreviewCategoryId.value)
+        if (found) return found
+    }
     return currentStage.value?.stage_categories?.[0]
+})
+
+watch(selectedPreviewStageId, () => {
+    selectedPreviewCategoryId.value = ''
 })
 
 const sampleEventDate = computed(() => {
@@ -275,6 +285,7 @@ const {
     testEmailDialogOpen,
     testEmailRecipient,
     testEmailStageId,
+    testEmailCategoryId,
     isSendingTestEmail,
     openTestEmailDialog,
     sendTestEmail
@@ -285,6 +296,22 @@ const {
     variables,
     localImages,
     attachStageGpx
+})
+
+const selectedTestEmailStage = computed(() => {
+    if (testEmailStageId.value && stages.value) {
+        const found = stages.value.find(s => s.id === testEmailStageId.value)
+        if (found) return found
+    }
+    return currentStage.value || stages.value?.[0]
+})
+
+const selectedTestEmailStageCategories = computed(() => {
+    return selectedTestEmailStage.value?.stage_categories || []
+})
+
+watch(testEmailStageId, () => {
+    testEmailCategoryId.value = ''
 })
 
 onMounted(async () => {
@@ -300,6 +327,9 @@ onMounted(async () => {
 
     if (!testEmailStageId.value && currentStage.value?.id) {
         testEmailStageId.value = currentStage.value.id
+    }
+    if (!testEmailCategoryId.value && currentStageCategory.value?.id) {
+        testEmailCategoryId.value = currentStageCategory.value.id
     }
 
     // Fetch existing template
@@ -603,15 +633,27 @@ const saveTemplate = handleSubmit(async (values) => {
                                         class="bg-amber-200 text-amber-800 rounded-full w-6 h-6 flex items-center justify-center text-xs">2</span>
                                     Map Variables
                                 </h3>
-                                <div v-if="stages && stages.length > 0" class="flex items-center gap-2 text-xs">
-                                    <span class="text-amber-800 font-medium">Sample Stage:</span>
-                                    <select v-model="selectedPreviewStageId"
-                                        class="px-2.5 py-1 text-xs border rounded-md bg-white border-amber-200 text-gray-700 shadow-sm focus:ring-primary focus:border-primary">
-                                        <option value="">Current ({{ currentStage?.name || 'Current Stage' }})</option>
-                                        <option v-for="stg in stages" :key="stg.id" :value="stg.id">
-                                            {{ stg.name }}
-                                        </option>
-                                    </select>
+                                <div v-if="stages && stages.length > 0" class="flex flex-wrap items-center gap-2 text-xs">
+                                    <div class="flex items-center gap-1.5">
+                                        <span class="text-amber-800 font-medium">Stage:</span>
+                                        <select v-model="selectedPreviewStageId"
+                                            class="px-2.5 py-1 text-xs border rounded-md bg-white border-amber-200 text-gray-700 shadow-sm focus:ring-primary focus:border-primary">
+                                            <option value="">Current ({{ currentStage?.name || 'Current Stage' }})</option>
+                                            <option v-for="stg in stages" :key="stg.id" :value="stg.id">
+                                                {{ stg.name }}
+                                            </option>
+                                        </select>
+                                    </div>
+                                    <div v-if="currentStage?.stage_categories && currentStage.stage_categories.length > 0" class="flex items-center gap-1.5">
+                                        <span class="text-amber-800 font-medium">Category:</span>
+                                        <select v-model="selectedPreviewCategoryId"
+                                            class="px-2.5 py-1 text-xs border rounded-md bg-white border-amber-200 text-gray-700 shadow-sm focus:ring-primary focus:border-primary">
+                                            <option value="">Default ({{ currentStage.stage_categories[0]?.name }})</option>
+                                            <option v-for="cat in currentStage.stage_categories" :key="cat.id" :value="cat.id">
+                                                {{ cat.name }} {{ cat.distance ? `(${cat.distance})` : '' }}
+                                            </option>
+                                        </select>
+                                    </div>
                                 </div>
                             </div>
                             <p class="text-sm text-amber-700 mb-4">We found placeholders in your template. Map them to
@@ -789,18 +831,31 @@ const saveTemplate = handleSubmit(async (values) => {
                         class="w-full px-3 py-2 border rounded-md text-sm border-gray-300 focus:ring-primary focus:border-primary" />
                 </div>
 
-                <div v-if="stages && stages.length > 0">
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Sample Stage Data (Optional)</label>
-                    <select v-model="testEmailStageId"
-                        class="w-full px-3 py-2 border rounded-md text-sm border-gray-300 focus:ring-primary focus:border-primary">
-                        <option value="">Current ({{ currentStage?.name || 'Current Stage' }})</option>
-                        <option v-for="stg in stages" :key="stg.id" :value="stg.id">
-                            {{ stg.name }}
-                        </option>
-                    </select>
-                    <p class="text-xs text-muted-foreground mt-1">
-                        Used to populate distance, stage category name, and GPX sample data.
-                    </p>
+                <div v-if="stages && stages.length > 0" class="space-y-3">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Sample Stage Data (Optional)</label>
+                        <select v-model="testEmailStageId"
+                            class="w-full px-3 py-2 border rounded-md text-sm border-gray-300 focus:ring-primary focus:border-primary">
+                            <option value="">Current ({{ currentStage?.name || 'Current Stage' }})</option>
+                            <option v-for="stg in stages" :key="stg.id" :value="stg.id">
+                                {{ stg.name }}
+                            </option>
+                        </select>
+                    </div>
+
+                    <div v-if="selectedTestEmailStageCategories && selectedTestEmailStageCategories.length > 0">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Sample Stage Category (Optional)</label>
+                        <select v-model="testEmailCategoryId"
+                            class="w-full px-3 py-2 border rounded-md text-sm border-gray-300 focus:ring-primary focus:border-primary">
+                            <option value="">Default (First available category)</option>
+                            <option v-for="cat in selectedTestEmailStageCategories" :key="cat.id" :value="cat.id">
+                                {{ cat.name }} {{ cat.distance ? `(${cat.distance})` : '' }}
+                            </option>
+                        </select>
+                        <p class="text-xs text-muted-foreground mt-1">
+                            Used to populate distance, category name, elevation, start timing, and GPX sample data.
+                        </p>
+                    </div>
                 </div>
             </div>
 

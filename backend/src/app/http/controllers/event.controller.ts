@@ -530,7 +530,7 @@ export class EventController {
     public static async sendTestEmail(request: Request, response: Response, next: NextFunction) {
         try {
             const eventId = request.params.event_id as string
-            const { testEmail, subject, htmlTemplate, variableMap, attachStageGpx, stageId } = request.body
+            const { testEmail, subject, htmlTemplate, variableMap, attachStageGpx, stageId, stageCategoryId } = request.body
 
             if (!testEmail || typeof testEmail !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(testEmail.trim())) {
                 response.status(400).json({ error: 'Valid test email address is required' })
@@ -573,10 +573,21 @@ export class EventController {
                 return
             }
 
-            // Find sample stage category and stage (either for specified stage or first available in event)
+            // Find sample stage category and stage (either for specified category, stage or first available in event)
             let sampleStageCategory = null
             let targetStage = null
-            if (stageId) {
+
+            if (stageCategoryId) {
+                sampleStageCategory = await prisma.stageCategory.findFirst({
+                    where: { id: stageCategoryId, deleted_at: null },
+                    include: { stage: { include: { event: true } }, map_file: true }
+                })
+                if (sampleStageCategory?.stage) {
+                    targetStage = sampleStageCategory.stage
+                }
+            }
+
+            if (!sampleStageCategory && stageId) {
                 targetStage = await prisma.stage.findFirst({
                     where: { id: stageId, deleted_at: null },
                     include: { event: true }
@@ -602,11 +613,21 @@ export class EventController {
                 })
             }
 
-            // Try to find an actual runner in this stage or event to use realistic test data
+            // Try to find an actual runner in this category, stage or event to use realistic test data
             let sampleRunner = null
-            if (stageId) {
+            if (stageCategoryId) {
                 sampleRunner = await prisma.eventRunner.findFirst({
-                    where: { stage_id: stageId, deleted_at: null },
+                    where: { stage_category_id: stageCategoryId, deleted_at: null },
+                    include: {
+                        personal: { include: { country: true, gender: true } },
+                        stage: { include: { event: true } },
+                        stage_category: { include: { stage: { include: { event: true } }, map_file: true } }
+                    }
+                })
+            }
+            if (!sampleRunner && (stageId || targetStage?.id)) {
+                sampleRunner = await prisma.eventRunner.findFirst({
+                    where: { stage_id: stageId || targetStage?.id, deleted_at: null },
                     include: {
                         personal: { include: { country: true, gender: true } },
                         stage: { include: { event: true } },
@@ -625,8 +646,8 @@ export class EventController {
                 })
             }
 
-            const runnerStageCat = (stageId && sampleStageCategory) ? sampleStageCategory : (sampleRunner?.stage_category || sampleStageCategory)
-            const currentStage = (stageId && targetStage) ? targetStage : (sampleRunner?.stage || runnerStageCat?.stage || targetStage)
+            const runnerStageCat = ((stageCategoryId || stageId) && sampleStageCategory) ? sampleStageCategory : (sampleRunner?.stage_category || sampleStageCategory)
+            const currentStage = ((stageCategoryId || stageId) && targetStage) ? targetStage : (sampleRunner?.stage || runnerStageCat?.stage || targetStage)
             const currentStageAddress = currentStage?.location || runnerStageCat?.location || 'Kathmandu, Nepal'
             const baseUrl = process.env.APP_URL || `${request.protocol}://${request.get('host')}`
             const gpxFileUrl = runnerStageCat?.map_file?.file_name

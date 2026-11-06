@@ -22,6 +22,7 @@ export function useEmailTemplateTest(options: EmailTemplateTestOptions) {
     const testEmailDialogOpen = ref(false)
     const testEmailRecipient = ref('')
     const testEmailStageId = ref('')
+    const testEmailCategoryId = ref('')
     const isSendingTestEmail = ref(false)
 
     const openTestEmailDialog = () => {
@@ -88,7 +89,8 @@ export function useEmailTemplateTest(options: EmailTemplateTestOptions) {
                 htmlTemplate: processedHtml,
                 variableMap,
                 attachStageGpx: attachStageGpx.value,
-                stageId: testEmailStageId.value || undefined
+                stageId: testEmailStageId.value || undefined,
+                stageCategoryId: testEmailCategoryId.value || undefined
             })
 
             toast.success(`Test email sent to ${testEmailRecipient.value.trim()}`)
@@ -104,6 +106,7 @@ export function useEmailTemplateTest(options: EmailTemplateTestOptions) {
         testEmailDialogOpen,
         testEmailRecipient,
         testEmailStageId,
+        testEmailCategoryId,
         isSendingTestEmail,
         openTestEmailDialog,
         sendTestEmail
