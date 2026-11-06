@@ -2,6 +2,7 @@
 import ClearCacheButton from '@/components/pages/dashboard/event/ClearCacheButton.vue'
 import type { TrailRace } from '~/lib/types'
 import { useEventStore } from '~/store/event'
+import { useStageStore } from '~/store/stage'
 import VolunteerList from '@/components/pages/dashboard/event/volunteer/list.vue'
 import EventSidebar from '@/components/pages/dashboard/event/sidebar.vue'
 
@@ -13,7 +14,14 @@ definePageMeta({
 
 const route = useRoute()
 const { get } = useEventStore()
+const { fetch: fetchStages } = useStageStore()
 const trailRace = ref<TrailRace | null>(null)
+
+const handleUpdate = async () => {
+    const eventId = route.params.id as string
+    trailRace.value = await get(eventId)
+    await fetchStages(eventId)
+}
 
 onMounted(async () => {
     trailRace.value = await get(route.params.id as string)
@@ -35,7 +43,7 @@ onMounted(async () => {
     <div class="flex flex-col md:flex-row gap-6">
         <div class="flex-grow">
             <template v-if="trailRace">
-                <VolunteerList :event-id="(route.params.id as string)" @update="async () => trailRace = await get(route.params.id as string)" />
+                <VolunteerList :event-id="(route.params.id as string)" @update="handleUpdate" />
             </template>
         </div>
         <EventSidebar />

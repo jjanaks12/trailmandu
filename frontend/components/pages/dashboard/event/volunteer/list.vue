@@ -1,8 +1,9 @@
 <script lang="ts" setup>
-import { CheckIcon, CopyIcon } from 'lucide-vue-next'
+import { CheckIcon, CopyIcon, RefreshCwIcon, LoaderIcon } from 'lucide-vue-next'
 import type { Checkpoint, Stage, Volunteer } from '~/lib/types'
 import { useAxios } from '~/services/axios'
 import { useStageStore } from '~/store/stage'
+import { toast } from 'vue-sonner'
 
 interface VolunteerListProps {
     eventId: string
@@ -12,43 +13,93 @@ const { fetch: fetchStages } = useStageStore()
 const emit = defineEmits(['update'])
 const props = defineProps<VolunteerListProps>()
 
-const { stages } = storeToRefs(useStageStore())
+const { stages, isLoading: isStageLoading } = storeToRefs(useStageStore())
 
 const selectedVolunteer = ref<Volunteer | null>(null)
 const checkpoints = ref<Checkpoint[]>([])
 const showDeleteModal = ref(false)
 const showAssignModal = ref(false)
 const selectedStage = ref('')
+const isRefreshing = ref(false)
+const isDeleting = ref(false)
 
 const { copy, copied } = useClipboard()
 const { axios } = useAxios()
 
 const stage = computed(() => stages.value.find(stage => stage.id == selectedStage.value))
 
+watch(stages, (newStages) => {
+    if ((!selectedStage.value || !newStages.some(s => s.id === selectedStage.value)) && newStages.length > 0) {
+        selectedStage.value = newStages[0].id
+    }
+}, { immediate: true })
+
+const refreshData = async (showToast = false) => {
+    isRefreshing.value = true
+    try {
+        await fetchStages(props.eventId)
+        if ((!selectedStage.value || !stages.value.some(s => s.id === selectedStage.value)) && stages.value.length > 0) {
+            selectedStage.value = stages.value[0].id
+        }
+        if (showToast) {
+            toast.success('Volunteer list refreshed')
+        }
+        emit('update')
+    } catch (e: any) {
+        if (showToast) {
+            toast.error('Failed to refresh volunteers')
+        }
+    } finally {
+        isRefreshing.value = false
+    }
+}
+
 const deleteVolunteer = async () => {
-    await axios.delete(`/volunteers/${selectedVolunteer.value?.id}`)
-    emit('update')
-    showDeleteModal.value = false
-    selectedVolunteer.value = null
+    if (!selectedVolunteer.value) return
+    isDeleting.value = true
+    try {
+        await axios.delete(`/volunteers/${selectedVolunteer.value?.id}`)
+        toast.success('Volunteer deleted successfully')
+        showDeleteModal.value = false
+        selectedVolunteer.value = null
+        await refreshData()
+    } catch (e: any) {
+        toast.error(e?.response?.data?.message || 'Failed to delete volunteer')
+    } finally {
+        isDeleting.value = false
+    }
 }
 
 onMounted(async () => {
-    await fetchStages(props.eventId)
+    await refreshData()
 })
 </script>
 
 <template>
-    <div class="bg-gray-100 space-y-6 mb-12 border border-dashed border-gray-400 p-3 rounded-xl sticky top-[83px] z-10">
-        <h2 class="text-xl text-gray-400">Filters:</h2>
-        <Select v-model="selectedStage">
-            <SelectTrigger class="w-[160px]" size="sm">
-                Stage:
-                <SelectValue placeholder="" />
-            </SelectTrigger>
-            <SelectContent>
-                <SelectItem v-for="stage in stages" :value="stage.id">{{ stage.name }}</SelectItem>
-            </SelectContent>
-        </Select>
+    <div
+        class="bg-gray-100 flex flex-wrap items-center justify-between gap-4 mb-6 border border-dashed border-gray-400 p-3 rounded-xl sticky top-[83px] z-10">
+        <div class="flex items-center gap-3">
+            <span class="text-sm font-medium text-gray-500">Stage:</span>
+            <Select v-model="selectedStage">
+                <SelectTrigger class="w-[180px] bg-white" size="sm">
+                    <SelectValue placeholder="Select stage" />
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectItem v-for="stg in stages" :key="stg.id" :value="stg.id">{{ stg.name }}</SelectItem>
+                </SelectContent>
+            </Select>
+            <span v-if="stage" class="text-xs text-muted-foreground">
+                ({{ stage.volunteers?.length || 0 }}
+                {{ (stage.volunteers?.length === 1) ? 'volunteer' : 'volunteers' }})
+            </span>
+        </div>
+        <div class="flex items-center gap-2">
+            <Button modifier="outline" size="sm" class="bg-white shadow-sm" @click="refreshData(true)"
+                :disabled="isRefreshing">
+                <RefreshCwIcon class="w-4 h-4 mr-2" :class="{ 'animate-spin': isRefreshing }" />
+                Refresh
+            </Button>
+        </div>
     </div>
     <Table>
         <TableHeader>
@@ -100,9 +151,9 @@ onMounted(async () => {
                     <span class="text-center block p-3 text-gray-500 bg-accent rounded">No stage selected</span>
                 </TableCell>
             </TableRow>
-            <TableRow v-if="stage?.volunteers.length == 0">
+            <TableRow v-if="stage && stage.volunteers?.length == 0">
                 <TableCell colspan="4">
-                    <span class="text-center block p-3 text-gray-500 bg-accent rounded">No volunteers has
+                    <span class="text-center block p-3 text-gray-500 bg-accent rounded">No volunteers have
                         registered</span>
                 </TableCell>
             </TableRow>
@@ -113,13 +164,15 @@ onMounted(async () => {
         <DialogContent>
             <DialogHeader>
                 <DialogTitle class="text-2xl">Assign volunteers to checkpoint</DialogTitle>
-                <DialogDescription>You can indiviually assign volunteers to the available checkpoints
+                <DialogDescription>You can individually assign volunteers to the available checkpoints
                 </DialogDescription>
             </DialogHeader>
             <PagesDashboardEventVolunteerAssignCheckpointForm :volunteer="selectedVolunteer" :checkpoints="checkpoints"
-                @update="() => {
+                @update="async () => {
+                    showAssignModal = false
                     selectedVolunteer = null
-                    emit('update')
+                    toast.success('Volunteer checkpoints updated')
+                    await refreshData()
                 }" />
         </DialogContent>
     </Dialog>
@@ -132,8 +185,11 @@ onMounted(async () => {
                 </DialogDescription>
             </DialogHeader>
             <DialogFooter>
-                <Button @click="showDeleteModal = false">Cancel</Button>
-                <Button @click="deleteVolunteer">Delete</Button>
+                <Button @click="showDeleteModal = false" :disabled="isDeleting">Cancel</Button>
+                <Button variant="destructive" @click="deleteVolunteer" :disabled="isDeleting">
+                    <LoaderIcon v-if="isDeleting" class="w-4 h-4 mr-2 animate-spin" />
+                    Delete
+                </Button>
             </DialogFooter>
         </DialogContent>
     </Dialog>
