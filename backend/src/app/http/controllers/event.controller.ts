@@ -573,9 +573,14 @@ export class EventController {
                 return
             }
 
-            // Find sample stage category (either for specified stage or first available in event)
+            // Find sample stage category and stage (either for specified stage or first available in event)
             let sampleStageCategory = null
+            let targetStage = null
             if (stageId) {
+                targetStage = await prisma.stage.findFirst({
+                    where: { id: stageId, deleted_at: null },
+                    include: { event: true }
+                })
                 sampleStageCategory = await prisma.stageCategory.findFirst({
                     where: { stage_id: stageId, deleted_at: null },
                     include: { stage: { include: { event: true } }, map_file: true }
@@ -587,17 +592,42 @@ export class EventController {
                     include: { stage: { include: { event: true } }, map_file: true }
                 })
             }
+            if (!targetStage && sampleStageCategory?.stage) {
+                targetStage = sampleStageCategory.stage
+            }
+            if (!targetStage) {
+                targetStage = await prisma.stage.findFirst({
+                    where: { event_id: eventId, deleted_at: null },
+                    include: { event: true }
+                })
+            }
 
-            // Try to find an actual runner in this event to use realistic test data
-            const sampleRunner = await prisma.eventRunner.findFirst({
-                where: { stage_category: { stage: { event_id: eventId } }, deleted_at: null },
-                include: {
-                    personal: { include: { country: true, gender: true } },
-                    stage_category: { include: { stage: { include: { event: true } }, map_file: true } }
-                }
-            })
+            // Try to find an actual runner in this stage or event to use realistic test data
+            let sampleRunner = null
+            if (stageId) {
+                sampleRunner = await prisma.eventRunner.findFirst({
+                    where: { stage_id: stageId, deleted_at: null },
+                    include: {
+                        personal: { include: { country: true, gender: true } },
+                        stage: { include: { event: true } },
+                        stage_category: { include: { stage: { include: { event: true } }, map_file: true } }
+                    }
+                })
+            }
+            if (!sampleRunner) {
+                sampleRunner = await prisma.eventRunner.findFirst({
+                    where: { stage_category: { stage: { event_id: eventId } }, deleted_at: null },
+                    include: {
+                        personal: { include: { country: true, gender: true } },
+                        stage: { include: { event: true } },
+                        stage_category: { include: { stage: { include: { event: true } }, map_file: true } }
+                    }
+                })
+            }
 
-            const runnerStageCat = sampleRunner?.stage_category || sampleStageCategory
+            const runnerStageCat = (stageId && sampleStageCategory) ? sampleStageCategory : (sampleRunner?.stage_category || sampleStageCategory)
+            const currentStage = (stageId && targetStage) ? targetStage : (sampleRunner?.stage || runnerStageCat?.stage || targetStage)
+            const currentStageAddress = currentStage?.location || runnerStageCat?.location || 'Kathmandu, Nepal'
             const baseUrl = process.env.APP_URL || `${request.protocol}://${request.get('host')}`
             const gpxFileUrl = runnerStageCat?.map_file?.file_name
                 ? `${baseUrl}/resources/gpx/${runnerStageCat.map_file.file_name}`
@@ -633,7 +663,9 @@ export class EventController {
                 'GPX File': gpxFileUrl,
                 'GPX File URL': gpxFileUrl,
                 'Event Name': event.name || 'Trailmandu Event',
-                'Event Address': runnerStageCat?.location || runnerStageCat?.stage?.location || 'Kathmandu, Nepal',
+                'Stage Address': currentStageAddress,
+                'Current Stage Address': currentStageAddress,
+                'Event Address': currentStageAddress,
                 'Event Timing': eventTimingDate ? formatTiming(eventTimingDate) : '25-12-2026 06:00 am',
                 'Event Thumbnail URL': finalVariableMap?.['Event Thumbnail URL'] || '',
                 'Stage Image URL': finalVariableMap?.['Stage Image URL'] || ''

@@ -765,6 +765,9 @@ export class RunnerController {
                     personal: {
                         include: { country: true, gender: true }
                     },
+                    stage: {
+                        include: { event: true }
+                    },
                     stage_category: {
                         include: {
                             stage: {
@@ -782,7 +785,8 @@ export class RunnerController {
             for (const runner of runners) {
                 const personal = runner.personal
                 const stageCategory = runner.stage_category
-                const event = stageCategory?.stage?.event
+                const stage = runner.stage || stageCategory?.stage
+                const event = stage?.event || stageCategory?.stage?.event
 
                 if (!personal?.email) continue;
 
@@ -806,6 +810,7 @@ export class RunnerController {
                 }
 
                 const eventTimingDate = stageCategory?.start || event?.start
+                const currentStageAddress = stage?.location || stageCategory?.location || ''
 
                 const values: Record<string, string> = {
                     'First Name': personal.first_name || '',
@@ -822,7 +827,9 @@ export class RunnerController {
                     'GPX File': gpxFileUrl,
                     'GPX File URL': gpxFileUrl,
                     'Event Name': event?.name || '',
-                    'Event Address': stageCategory?.location || stageCategory?.stage?.location || '',
+                    'Stage Address': currentStageAddress,
+                    'Current Stage Address': currentStageAddress,
+                    'Event Address': currentStageAddress,
                     'Event Timing': eventTimingDate ? formatTiming(eventTimingDate) : '',
                     'Event Thumbnail URL': finalVariableMap?.['Event Thumbnail URL'] || '',
                     'Stage Image URL': finalVariableMap?.['Stage Image URL'] || ''

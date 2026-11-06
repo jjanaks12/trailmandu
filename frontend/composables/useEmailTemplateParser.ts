@@ -20,9 +20,10 @@ export interface VariableItem {
 
 export const availableMappings = [
     'First Name', 'Last Name', 'Full Name', 'Email', 'BIB Number',
-    'Country', 'Gender', 'Stage Category Name', 'Stage Distance', 'Stage Elevation',
-    'GPX File', 'GPX File URL', 'Event Name', 'Event Address', 'Event Timing',
-    'Event Thumbnail URL', 'Stage Image URL'
+    'Country', 'Gender',
+    'Stage Address', 'Current Stage Address', 'Stage Category Name', 'Stage Distance', 'Stage Elevation',
+    'GPX File', 'GPX File URL', 'Stage Image URL',
+    'Event Name', 'Event Address', 'Event Timing', 'Event Thumbnail URL'
 ]
 
 export const availableDateTimeFormats = [
@@ -122,8 +123,9 @@ export function useEmailTemplateParser() {
                 else if (lower.includes('bib')) guessed = 'BIB Number'
                 else if (lower.includes('country')) guessed = 'Country'
                 else if (lower.includes('gender')) guessed = 'Gender'
+                else if (lower.includes('current_stage') || lower.includes('current-stage')) guessed = 'Current Stage Address'
+                else if (lower.includes('address') || lower.includes('venue') || lower.includes('location')) guessed = 'Stage Address'
                 else if (lower.includes('event') && !lower.includes('address') && !lower.includes('venue') && !lower.includes('location')) guessed = 'Event Name'
-                else if (lower.includes('address') || lower.includes('venue') || lower.includes('location')) guessed = 'Event Address'
                 else if (lower.includes('time') || lower.includes('date')) guessed = 'Event Timing'
                 else if (lower.includes('gpx') || lower.includes('map_file')) guessed = 'GPX File'
                 else if (lower.includes('category') || (lower.includes('stage') && lower.includes('name'))) guessed = 'Stage Category Name'

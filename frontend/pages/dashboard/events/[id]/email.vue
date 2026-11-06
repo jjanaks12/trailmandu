@@ -127,7 +127,7 @@ const startBlankTemplate = () => {
           <p style="margin: 4px 0;"><strong>BIB Number:</strong> {{bib_number}}</p>
           <p style="margin: 4px 0;"><strong>Distance:</strong> {{stage_distance}}</p>
           <p style="margin: 4px 0;"><strong>Elevation:</strong> {{stage_elevation}}</p>
-          <p style="margin: 4px 0;"><strong>Venue / Address:</strong> {{event_address}}</p>
+          <p style="margin: 4px 0;"><strong>Stage Address:</strong> {{stage_address}}</p>
         </div>
         <p>See you at the starting line!</p>
       </td>
