@@ -264,8 +264,7 @@ const isSticky = computed(() => y.value > 450)
                         class="hidden md:flex items-center gap-6 text-xs text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider">
                         <div class="flex items-center gap-1.5" v-if="!isFinished">
                             <CalendarIcon class="w-4 h-4 text-primary" />
-                            <span>{{ formatDate(selectedStageCategory?.start ?? trailRace.start) }} — {{
-                                formatDate(selectedStageCategory?.end ?? trailRace.end) }}</span>
+                            <span>{{ formatDate(selectedStageCategory?.start ?? trailRace.start) }}</span>
                         </div>
                         <div class="flex items-center gap-1.5" v-if="selectedStage">
                             <MapPinIcon class="w-4 h-4 text-primary" />
