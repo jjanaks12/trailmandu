@@ -48,6 +48,7 @@ const init = () => {
                 country_id: props.runner.personal.country_id,
                 phone_number: props.runner.personal.phone_number,
                 email: props.runner.personal.email,
+                itra_id: props.runner.personal.itra_id || '',
                 stage_category_id: props.runner.stage_category_id,
                 description: {
                     club_name: props.runner.club_name,
@@ -59,16 +60,24 @@ const init = () => {
     })
 }
 
+watch(() => props.runner, init)
 onMounted(init)
 </script>
 
 <template>
     <Form ref="form" @submit="handleSumit" class="space-y-8">
-        <Field name="bib" v-slot="{ field }" as="div" class="flex flex-col gap-2">
-            <label for="bib" class="block text-sm font-medium text-gray-700">BIB#</label>
-            <Input type="text" id="bib" v-bind="field" />
-            <ErrorMessage class="error__message" name="bib" />
-        </Field>
+        <div class="grid grid-cols-2 gap-4">
+            <Field name="bib" v-slot="{ field }" as="div" class="flex flex-col gap-2">
+                <label for="bib" class="block text-sm font-medium text-gray-700">BIB#</label>
+                <Input type="text" id="bib" v-bind="field" />
+                <ErrorMessage class="error__message" name="bib" />
+            </Field>
+            <Field name="itra_id" v-slot="{ field }" as="div" class="flex flex-col gap-2">
+                <label for="itra_id" class="block text-sm font-medium text-gray-700">ITRA ID</label>
+                <Input type="text" id="itra_id" placeholder="ITRA ID" v-bind="field" />
+                <ErrorMessage class="error__message" name="itra_id" />
+            </Field>
+        </div>
         <div class="grid grid-cols-3 gap-4">
             <Field name="first_name" v-slot="{ field }" as="div" class="flex flex-col gap-2">
                 <label for="first_name" class="block text-sm font-medium text-gray-700">First name</label>

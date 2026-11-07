@@ -273,7 +273,8 @@ export class RunnerController {
                     gender_id: request.body.gender_id,
                     country_id: request.body.country_id,
                     email: request.body.email,
-                    size_id: request.body.size_id
+                    size_id: request.body.size_id,
+                    itra_id: request.body.itra_id !== undefined ? (request.body.itra_id ? String(request.body.itra_id).trim() : null) : undefined
                 }
             })
             response.send(runner)
