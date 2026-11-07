@@ -78,6 +78,9 @@ export class RunnerController {
                         }
                     },
                     volunteer_on_checkpoints: {
+                        where: {
+                            deleted_at: null
+                        },
                         include: {
                             checkpoint: true
                         },
@@ -286,6 +289,9 @@ export class RunnerController {
                     id: request.params.checkpoint_id as string
                 }
             })
+            if (!checkpoint)
+                throw createHttpError.NotFound('Checkpoint not found')
+
             const volunteer = await prisma.volunteer.findFirst({
                 where: {
                     personal_id: request.body.auth_user.personal_id
@@ -293,17 +299,6 @@ export class RunnerController {
             })
             if (!volunteer)
                 throw createHttpError.NotFound('Volunteer not found')
-
-            const hasAlreadyBeenAdded = await prisma.volunteerCheckpoint.findFirst({
-                where: {
-                    runner_id: request.params.runner_id as string,
-                    checkpoint_id: request.params.checkpoint_id as string,
-                    volunteer_id: volunteer.id
-                }
-            })
-
-            if (hasAlreadyBeenAdded)
-                throw createHttpError.BadRequest('Runner has already been added to this checkpoint')
 
             const runner = await prisma.eventRunner.findFirst({
                 where: {
@@ -313,40 +308,89 @@ export class RunnerController {
                     personal: true
                 }
             })
+            if (!runner)
+                throw createHttpError.NotFound('Runner not found')
 
-            const rank = await prisma.rank.count({
+            // 1. Check if there is already an active (not deleted) entry for this runner at this checkpoint
+            const activeEntry = await prisma.volunteerCheckpoint.findFirst({
                 where: {
-                    stage_category_id: request.body.stage_category_id as string,
-                    gender_id: runner.personal.gender_id as string
+                    runner_id: runner.id,
+                    checkpoint_id: checkpoint.id,
+                    deleted_at: null
                 }
             })
 
-            if (checkpoint.is_end)
-                await prisma.rank.create({
-                    data: {
-                        runner_id: request.params.runner_id as string,
-                        position: rank + 1,
-                        gender_id: runner.personal.gender_id as string,
-                        stage_category_id: request.body.stage_category_id as string
+            if (activeEntry)
+                throw createHttpError.BadRequest('Runner has already been added to this checkpoint')
+
+            // 2. Handle rank when logging at the end checkpoint
+            if (checkpoint.is_end) {
+                const rankCount = await prisma.rank.count({
+                    where: {
+                        stage_category_id: request.body.stage_category_id as string,
+                        gender_id: runner.personal.gender_id as string
                     }
                 })
 
-            const ifAlreadyAdded = await prisma.volunteerCheckpoint.findFirst({
+                const existingRank = await prisma.rank.findFirst({
+                    where: {
+                        runner_id: runner.id
+                    }
+                })
+
+                if (existingRank) {
+                    await prisma.rank.update({
+                        where: { id: existingRank.id },
+                        data: {
+                            position: rankCount + 1,
+                            gender_id: runner.personal.gender_id as string,
+                            stage_category_id: request.body.stage_category_id as string
+                        }
+                    })
+                } else {
+                    await prisma.rank.create({
+                        data: {
+                            runner_id: runner.id,
+                            position: rankCount + 1,
+                            gender_id: runner.personal.gender_id as string,
+                            stage_category_id: request.body.stage_category_id as string
+                        }
+                    })
+                }
+            }
+
+            // 3. Check if there is an existing soft-deleted entry for this runner at this checkpoint
+            const deletedEntry = await prisma.volunteerCheckpoint.findFirst({
                 where: {
-                    runner_id: request.params.runner_id as string,
-                    checkpoint_id: request.params.checkpoint_id as string,
-                    volunteer_id: volunteer.id
+                    runner_id: runner.id,
+                    checkpoint_id: checkpoint.id,
+                    deleted_at: { not: null }
                 }
             })
 
-            if (ifAlreadyAdded)
-                throw createHttpError.BadRequest('Runner has already been added to this checkpoint')
+            if (deletedEntry) {
+                // Restore the entry: clear deleted_at, update timer to now, and assign volunteer
+                const restoredEntry = await prisma.volunteerCheckpoint.update({
+                    where: {
+                        id: deletedEntry.id
+                    },
+                    data: {
+                        deleted_at: null,
+                        timer: moment.utc().toISOString(),
+                        volunteer_id: volunteer.id
+                    }
+                })
+                response.send(restoredEntry)
+                return
+            }
 
+            // 4. Otherwise create a fresh entry
             response.send(await prisma.volunteerCheckpoint.create({
                 data: {
                     volunteer_id: volunteer.id,
-                    runner_id: request.params.runner_id as string,
-                    checkpoint_id: request.params.checkpoint_id as string
+                    runner_id: runner.id,
+                    checkpoint_id: checkpoint.id,
+                    timer: moment.utc().toISOString()
                 }
             }))
         } catch (error) {

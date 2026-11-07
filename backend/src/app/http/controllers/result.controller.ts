@@ -18,6 +18,9 @@ export class ResultController {
                 include: {
                     status: true,
                     volunteer_on_checkpoints: {
+                        where: {
+                            deleted_at: null
+                        },
                         include: {
                             checkpoint: true
                         }

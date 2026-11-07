@@ -3,6 +3,7 @@ import moment from 'moment'
 import { abbr, showImage } from '~/lib/filters'
 import type { EventRunner } from '~/lib/types'
 import { useAxios } from '~/services/axios'
+import { toast } from 'vue-sonner'
 
 interface VolunteerRunnerProps {
     runner: EventRunner
@@ -14,26 +15,41 @@ interface VolunteerRunnerProps {
 const emit = defineEmits(['update', 'fetch'])
 const props = defineProps<VolunteerRunnerProps>()
 const { axios } = useAxios()
+const isLogging = ref(false)
 
 const showDidnotfinishedDialog = ref(false)
 
-const fullName = computed(() => [props.runner.personal.first_name, props.runner.personal.middle_name, props.runner.personal.last_name].join(' '))
+const fullName = computed(() => [props.runner.personal.first_name, props.runner.personal.middle_name, props.runner.personal.last_name].filter(Boolean).join(' '))
 
 const logTimer = async () => {
-    if (props.timer == undefined) {
-        await axios.post(`/volunteers/${props.checkpointId}/log_timer/${props.runner.id}`, {
-            stage_category_id: props.runner.stage_category_id
-        })
-        emit('update')
+    if (props.timer == undefined && !isLogging.value) {
+        try {
+            isLogging.value = true
+            await axios.post(`/volunteers/${props.checkpointId}/log_timer/${props.runner.id}`, {
+                stage_category_id: props.runner.stage_category_id
+            })
+            toast.success(`Recorded time for ${fullName.value || '#' + props.runner.bib}`)
+            emit('update')
+        } catch (e: any) {
+            toast.error(e?.response?.data?.message || e?.response?.data || 'Failed to record timer')
+        } finally {
+            isLogging.value = false
+        }
     }
 }
 
 const didNotFinishRunner = async () => {
-    await axios.put(`/runners/${props.runner.id}/did-not-finish`, {
-        checkpoint_id: props.checkpointId
-    })
-    emit('fetch')
-    showDidnotfinishedDialog.value = false
+    try {
+        await axios.put(`/runners/${props.runner.id}/did-not-finish`, {
+            checkpoint_id: props.checkpointId
+        })
+        toast.info(`${fullName.value || '#' + props.runner.bib} marked as Did Not Finish`)
+        emit('fetch')
+    } catch (e: any) {
+        toast.error(e?.response?.data?.message || 'Failed to update runner status')
+    } finally {
+        showDidnotfinishedDialog.value = false
+    }
 }
 </script>
 

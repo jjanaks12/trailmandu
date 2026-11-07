@@ -361,6 +361,9 @@ export type VolunteerCheckpoint = {
     runner: EventRunner
     checkpoint_id: string
     checkpoint: Checkpoint
+    created_at?: string
+    updated_at?: string
+    deleted_at?: string | null
 }
 
 export type StageCategory = {

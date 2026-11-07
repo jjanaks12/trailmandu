@@ -77,28 +77,33 @@ export class CheckpointController {
     public static async deleteCheckpointEntryData(request: Request, response: Response, next: NextFunction) {
         try {
             await prisma.$transaction(async (prisma) => {
-                const volunteerCheckpoint = await prisma.volunteerCheckpoint.delete({
+                const volunteerCheckpoint = await prisma.volunteerCheckpoint.findUnique({
                     where: {
                         id: request.params.delete_checkpoint_data_id as string
+                    },
+                    include: {
+                        checkpoint: true
                     }
                 })
 
-                const stageCategory = await prisma.stageCategory.findFirst({
+                if (!volunteerCheckpoint) return
+
+                await prisma.volunteerCheckpoint.update({
                     where: {
-                        checkpoints: {
-                            some: {
-                                id: request.params.checkpoint_id as string
-                            }
+                        id: volunteerCheckpoint.id
+                    },
+                    data: {
+                        deleted_at: moment.utc().toISOString()
+                    }
+                })
+
+                if (volunteerCheckpoint.checkpoint?.is_end) {
+                    await prisma.rank.deleteMany({
+                        where: {
+                            runner_id: volunteerCheckpoint.runner_id
                         }
-                    }
-                })
-
-                await prisma.rank.deleteMany({
-                    where: {
-                        runner_id: volunteerCheckpoint.runner_id,
-                        stage_category_id: stageCategory?.id
-                    }
-                })
+                    })
+                }
             })
             response.send('ok')
         } catch (error) {

@@ -657,6 +657,8 @@ model VolunteerCheckpoint {
   checkpoint_id String
   checkpoint    Checkpoint  @relation(fields: [checkpoint_id], references: [id], onDelete: Cascade)
   created_at    DateTime    @default(now())
+  updated_at    DateTime?
+  deleted_at    DateTime?
 
   @@map("volunteer_on_checkpoints")
 }

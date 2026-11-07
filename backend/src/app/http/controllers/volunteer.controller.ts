@@ -186,7 +186,8 @@ export class VolunteerController {
         try {
             response.send(await prisma.volunteerCheckpoint.findMany({
                 where: {
-                    checkpoint_id: request.params.checkpoint_id as string
+                    checkpoint_id: request.params.checkpoint_id as string,
+                    deleted_at: null
                 },
                 include: {
                     runner: true,
